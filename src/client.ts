@@ -98,6 +98,7 @@ export class PixooClient {
    * @param speed - Milliseconds per frame.
    */
   async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResponse> {
+    await this.resetGifId();
     this.picId++;
     let lastResponse: PixooResponse = { error_code: -1 };
     for (let i = 0; i < frames.length; i++) {
