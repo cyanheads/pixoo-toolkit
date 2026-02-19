@@ -1,48 +1,71 @@
+<div align="center">
+
 # @cyanheads/pixoo
 
-TypeScript toolkit for the Divoom Pixoo-64 — pixel rendering, animations, and device control over the local HTTP API.
+**TypeScript toolkit for the Divoom Pixoo-64**\
+Pixel rendering, animations, and device control over the local HTTP API.
 
-## Features
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- **Canvas**: 64×64 RGB pixel buffer with drawing primitives (rects, circles, lines, triangles, gradients, blending, scrolling)
-- **Bitmap fonts**: Two built-in sizes (5×7 full ASCII, 3×5 compact) with text measurement and centered rendering
-- **Color system**: RGB/HSL types, 30+ named colors, interpolation, hex parsing
-- **Device client**: Full Pixoo-64 HTTP API — push frames, animations, channel/brightness control, text overlays, scoreboard, timer, buzzer
-- **Image loading**: Resize any image to canvas via sharp, sprite downsampling with color classification
-- **Animation builder**: Multi-frame sequences with per-frame render callbacks
-- **SVG path rendering**: Parse SVG `d` attributes and rasterize with scanline fill
-- **PNG export**: Zero-dependency encoder (only `node:zlib`) with nearest-neighbor upscaling for previews
+</div>
 
-## Requirements
+---
 
-- Node.js >= 20
-- Divoom Pixoo-64 on the same network
+## Overview
 
-## Install
+Full programmatic control of the Pixoo-64 from TypeScript — bypassing the Divoom app entirely. Push custom visuals, animations, dashboards, and interactive displays to the 64×64 RGB LED matrix over your local network.
+
+### Highlights
+
+| Module | What it does |
+|---|---|
+| **Canvas** | 64×64 RGB pixel buffer — rects, circles, lines, triangles, gradients, blending, scrolling |
+| **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact) with measurement and centered rendering |
+| **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing |
+| **Device Client** | Full Pixoo-64 HTTP API — frames, animations, channels, brightness, text overlays, scoreboard, timer, buzzer |
+| **Image Loading** | Resize any image to canvas via sharp, sprite downsampling with color classification |
+| **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
+| **SVG Paths** | Parse SVG `d` attributes and rasterize with scanline fill |
+| **PNG Export** | Zero-dependency encoder (only `node:zlib`) with nearest-neighbor upscaling |
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js** >= 20
+- **Divoom Pixoo-64** on the same network
+
+### Installation
 
 ```bash
 npm install
 ```
 
-## Usage
+### Build & Run
 
 ```bash
 # Build
 npx tsc
 
 # Run a script
-npx tsc && node dist/scripts/hello-claude.js
+node dist/scripts/hello-claude.js
 
 # Run the demo
 npm run demo
 ```
 
-### Quick example
+> **Tip:** Set the `PIXOO_IP` environment variable to override the default device IP (`10.1.20.114`).
+
+## Usage
+
+### Quick Example
 
 ```typescript
 import { PixooClient, Canvas, Color, drawTextCentered, FONT_5x7, savePng } from '@cyanheads/pixoo';
 
-const device = new PixooClient('10.1.20.114');
+const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
 const canvas = new Canvas();
 
 canvas.gradientV([10, 5, 30], [5, 15, 40]);
@@ -57,7 +80,7 @@ await device.push(canvas);
 ```typescript
 import { PixooClient, buildAnimation, drawTextCentered, hslToRgb, Color, FONT_5x7 } from '@cyanheads/pixoo';
 
-const device = new PixooClient('10.1.20.114');
+const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
 const anim = buildAnimation(20, 120, (frame, i, total) => {
   frame.clear('black');
   const color = hslToRgb([(i / total) * 360, 0.9, 0.6]);
@@ -68,7 +91,7 @@ const anim = buildAnimation(20, 120, (frame, i, total) => {
 await device.pushAnimation(anim.frames, anim.speed);
 ```
 
-### Loading images
+### Loading Images
 
 ```typescript
 import { loadImage, downsampleSprite, renderSprite, Canvas, savePng } from '@cyanheads/pixoo';
@@ -83,7 +106,7 @@ renderSprite(c, sprite.grid, { scale: 4, y: 24 });
 await savePng(c, 'output/sprite.png');
 ```
 
-## Project structure
+## Project Structure
 
 ```
 src/
@@ -105,6 +128,16 @@ output/           Generated PNG previews (gitignored)
 
 All commands go to `POST http://<device-ip>/post` with a JSON body containing a `Command` field. The `PixooClient` class wraps this — use `client.send(command, params)` for raw access, or the typed convenience methods.
 
+```typescript
+// Raw command
+await device.send('Channel/SetBrightness', { Brightness: 80 });
+
+// Typed convenience
+await device.setBrightness(80);
+await device.setChannel(Channel.Custom);
+await device.setScreen(true);
+```
+
 ## License
 
-MIT
+[MIT](LICENSE)
