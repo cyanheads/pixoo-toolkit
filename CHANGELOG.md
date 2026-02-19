@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `PixooClient.pushAnimation()` now calls `resetGifId()` before sending frames, matching the behavior of `push()`. Previously, animations could be silently ignored by the device.
+
+### Changed
+
+- Bumped `typescript` from `^5.7.0` to `^5.9.3`.
+- Bumped `@types/sharp` from `^0.31.1` to `^0.32.0`.
+- Added `bun.lock` lockfile.
+
 ### Added
 
 - `scripts/color-test.ts`: Color calibration chart — 4×4 grid of 16 numbered swatches with auto-contrast labels for verifying LED color accuracy.
