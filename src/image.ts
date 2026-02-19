@@ -124,7 +124,10 @@ export async function downsampleSprite(
   };
 
   // Find bounding box of visible content
-  let minX = width, minY = height, maxX = 0, maxY = 0;
+  let minX = width,
+    minY = height,
+    maxX = 0,
+    maxY = 0;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (isVisible(x, y)) {
@@ -151,7 +154,10 @@ export async function downsampleSprite(
 
   // Collect colors to find the dominant body color
   const colorCounts = new Map<string, { color: RGB; count: number }>();
-  let darkR = 0, darkG = 0, darkB = 0, darkCount = 0;
+  let darkR = 0,
+    darkG = 0,
+    darkB = 0,
+    darkCount = 0;
 
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
@@ -188,9 +194,14 @@ export async function downsampleSprite(
     }
   }
 
-  const darkColor: RGB = darkCount > 0
-    ? [Math.round(darkR / darkCount), Math.round(darkG / darkCount), Math.round(darkB / darkCount)]
-    : [20, 12, 12];
+  const darkColor: RGB =
+    darkCount > 0
+      ? [
+          Math.round(darkR / darkCount),
+          Math.round(darkG / darkCount),
+          Math.round(darkB / darkCount),
+        ]
+      : [20, 12, 12];
 
   // Sample grid
   const grid: SpriteCell[][] = [];
@@ -253,16 +264,22 @@ export function renderSprite(
 
       let color = cell.color;
       // Allow color overrides
-      if (opts.bodyColor && opts.originalBodyColor &&
-          color[0] === opts.originalBodyColor[0] &&
-          color[1] === opts.originalBodyColor[1] &&
-          color[2] === opts.originalBodyColor[2]) {
+      if (
+        opts.bodyColor &&
+        opts.originalBodyColor &&
+        color[0] === opts.originalBodyColor[0] &&
+        color[1] === opts.originalBodyColor[1] &&
+        color[2] === opts.originalBodyColor[2]
+      ) {
         color = opts.bodyColor;
       }
-      if (opts.darkColor && opts.originalDarkColor &&
-          color[0] === opts.originalDarkColor[0] &&
-          color[1] === opts.originalDarkColor[1] &&
-          color[2] === opts.originalDarkColor[2]) {
+      if (
+        opts.darkColor &&
+        opts.originalDarkColor &&
+        color[0] === opts.originalDarkColor[0] &&
+        color[1] === opts.originalDarkColor[1] &&
+        color[2] === opts.originalDarkColor[2]
+      ) {
         color = opts.darkColor;
       }
 

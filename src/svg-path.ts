@@ -23,14 +23,15 @@ function tokenize(d: string): Array<{ cmd: string; args: number[] }> {
   while ((match = re.exec(d)) !== null) {
     const cmd = match[1]!;
     const argStr = match[2]!.trim();
-    const args = argStr.length > 0
-      ? argStr
-          .replace(/,/g, ' ')
-          .replace(/(?<![eE])-/g, ' -')
-          .split(/\s+/)
-          .filter(Boolean)
-          .map(Number)
-      : [];
+    const args =
+      argStr.length > 0
+        ? argStr
+            .replace(/,/g, ' ')
+            .replace(/(?<![eE])-/g, ' -')
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(Number)
+        : [];
     tokens.push({ cmd, args });
   }
   return tokens;
@@ -203,11 +204,7 @@ export function parseSvgPath(d: string): Point[] {
 }
 
 /** Scanline fill a polygon onto a canvas. */
-export function fillPolygon(
-  canvas: Canvas,
-  points: Point[],
-  color: ColorLike,
-): void {
+export function fillPolygon(canvas: Canvas, points: Point[], color: ColorLike): void {
   if (points.length < 3) return;
   const [r, g, b] = resolveColor(color);
 

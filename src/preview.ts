@@ -9,6 +9,8 @@ import { Canvas } from './canvas.js';
  * nearest-neighbor upscaling for crisp pixel-art previews.
  */
 
+const TEXT_ENCODER = new TextEncoder();
+
 function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
   for (let i = 0; i < data.length; i++) {
@@ -37,7 +39,7 @@ function writeU32BE(buf: Uint8Array, offset: number, value: number): void {
 }
 
 function makeChunk(type: string, data: Uint8Array): Uint8Array {
-  const typeBytes = new TextEncoder().encode(type);
+  const typeBytes = TEXT_ENCODER.encode(type);
   const chunk = new Uint8Array(4 + 4 + data.length + 4);
   writeU32BE(chunk, 0, data.length);
   chunk.set(typeBytes, 4);
@@ -49,19 +51,15 @@ function makeChunk(type: string, data: Uint8Array): Uint8Array {
   return chunk;
 }
 
-function encodePng(
-  width: number,
-  height: number,
-  rgb: Uint8Array,
-): Uint8Array {
+function encodePng(width: number, height: number, rgb: Uint8Array): Uint8Array {
   const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
   // IHDR
   const ihdr = new Uint8Array(13);
   writeU32BE(ihdr, 0, width);
   writeU32BE(ihdr, 4, height);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 2;  // color type: RGB
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // color type: RGB
   ihdr[10] = 0; // compression
   ihdr[11] = 0; // filter
   ihdr[12] = 0; // interlace
@@ -117,9 +115,7 @@ export function canvasToPng(canvas: Canvas, scale = 1): Uint8Array {
   const w = canvas.width * scale;
   const h = canvas.height * scale;
   const rgb =
-    scale === 1
-      ? canvas.buffer
-      : upscale(canvas.buffer, canvas.width, canvas.height, scale);
+    scale === 1 ? canvas.buffer : upscale(canvas.buffer, canvas.width, canvas.height, scale);
   return encodePng(w, h, rgb);
 }
 
@@ -141,11 +137,7 @@ export async function saveAnimationPngs(
   basePath: string,
   scale = 8,
 ): Promise<string[]> {
-  const paths: string[] = [];
-  for (let i = 0; i < frames.length; i++) {
-    const framePath = `${basePath}_${String(i).padStart(3, '0')}.png`;
-    await savePng(frames[i]!, framePath, scale);
-    paths.push(framePath);
-  }
+  const paths = frames.map((_, i) => `${basePath}_${String(i).padStart(3, '0')}.png`);
+  await Promise.all(frames.map((frame, i) => savePng(frame, paths[i]!, scale)));
   return paths;
 }

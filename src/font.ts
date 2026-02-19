@@ -215,6 +215,20 @@ function glyphWidth(font: BitmapFont, ch: string, glyph: readonly number[]): num
   return Math.max(maxBit, ch === ' ' ? font.width : 1);
 }
 
+/** Resolve a character to a glyph, auto-uppercasing if the font lacks lowercase. */
+function resolveGlyph(
+  font: BitmapFont,
+  ch: string,
+): { ch: string; glyph: readonly number[] | undefined } {
+  let glyph = font.glyphs[ch];
+  if (!glyph && ch >= 'a' && ch <= 'z') {
+    const upper = ch.toUpperCase();
+    glyph = font.glyphs[upper];
+    if (glyph) return { ch: upper, glyph };
+  }
+  return { ch, glyph: glyph ?? font.glyphs['?'] };
+}
+
 /** Measure the pixel width of a string without drawing it. */
 export function measureText(text: string, opts: TextOptions = {}): number {
   const font = opts.font ?? FONT_5x7;
@@ -222,8 +236,7 @@ export function measureText(text: string, opts: TextOptions = {}): number {
   const scale = opts.scale ?? 1;
   let width = 0;
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    const glyph = font.glyphs[ch] ?? font.glyphs['?'];
+    const { ch, glyph } = resolveGlyph(font, text[i]!);
     if (!glyph) {
       width += (font.width + spacing) * scale;
       continue;
@@ -251,8 +264,7 @@ export function drawText(
   let cx = x;
 
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    const glyph = font.glyphs[ch] ?? font.glyphs['?'];
+    const { ch, glyph } = resolveGlyph(font, text[i]!);
     if (!glyph) {
       cx += (font.width + spacing) * scale;
       continue;

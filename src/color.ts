@@ -22,11 +22,7 @@ export function hslToRgb([h, s, l]: HSL): RGB {
   else if (h < 240) [r, g, b] = [0, x, c];
   else if (h < 300) [r, g, b] = [x, 0, c];
   else [r, g, b] = [c, 0, x];
-  return [
-    Math.round((r + m) * 255),
-    Math.round((g + m) * 255),
-    Math.round((b + m) * 255),
-  ];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
 export function rgbToHsl([r, g, b]: RGB): HSL {
@@ -56,33 +52,37 @@ export function hexToRgb(hex: number): RGB {
   return [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff];
 }
 
-/** Parse a CSS-style hex string (#RGB or #RRGGBB) into RGB. */
-export function parseHexString(s: string): RGB {
+/** Parse a CSS-style hex string (#RGB or #RRGGBB) into RGB. Returns null for invalid input. */
+export function parseHexString(s: string): RGB | null {
   const clean = s.replace(/^#/, '');
   if (clean.length === 3) {
     const r = parseInt(clean[0]! + clean[0]!, 16);
     const g = parseInt(clean[1]! + clean[1]!, 16);
     const b = parseInt(clean[2]! + clean[2]!, 16);
-    return [r || 0, g || 0, b || 0];
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+    return [r, g, b];
   }
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return [r || 0, g || 0, b || 0];
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+    return [r, g, b];
+  }
+  return null;
 }
 
-/** Resolve any ColorLike to an RGB tuple. */
+/** Resolve any ColorLike to an RGB tuple. Returns white for unresolvable strings. */
 export function resolveColor(c: ColorLike): RGB {
   if (Array.isArray(c)) {
     return [c[0] ?? 0, c[1] ?? 0, c[2] ?? 0];
   }
   if (typeof c === 'number') return hexToRgb(c);
-  if (typeof c === 'string') {
-    const named = NAMED_COLORS[c.toLowerCase()];
-    if (named) return named;
-    return parseHexString(c);
-  }
-  return [255, 255, 255];
+  // c is string here — TS needs this guard since Array.isArray doesn't narrow readonly tuples
+  const s = c as string;
+  const named = NAMED_COLORS[s.toLowerCase()];
+  if (named) return named;
+  return parseHexString(s) ?? [255, 255, 255];
 }
 
 /** Linearly interpolate between two colors. t: 0–1. */
@@ -106,7 +106,7 @@ export function dimColor(c: RGB, factor: number): RGB {
 
 // --- Named colors ---
 
-export const NAMED_COLORS: Record<string, RGB> = {
+export const NAMED_COLORS: Readonly<Record<string, RGB>> = {
   black: [0, 0, 0],
   white: [255, 255, 255],
   red: [255, 0, 0],
@@ -140,7 +140,7 @@ export const NAMED_COLORS: Record<string, RGB> = {
   claude: [230, 150, 70],
   'claude-orange': [230, 150, 70],
   'claude-tan': [210, 180, 140],
-} as const;
+};
 
 /** Convenience color constants. */
 export const Color = {
@@ -156,5 +156,5 @@ export const Color = {
   PURPLE: [128, 0, 128] as RGB,
   PINK: [255, 105, 180] as RGB,
   GRAY: [128, 128, 128] as RGB,
-  TRANSPARENT: [0, 0, 0] as RGB, // no actual alpha, but useful as a sentinel
-} as const;
+  TRANSPARENT: [0, 0, 0] as RGB, // no actual alpha — sentinel for blit transparency key
+};

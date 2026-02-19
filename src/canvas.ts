@@ -65,10 +65,14 @@ export class Canvas {
   /** Fill entire canvas with a color. */
   clear(color: ColorLike = [0, 0, 0]): this {
     const [r, g, b] = resolveColor(color);
-    for (let i = 0; i < BUFFER_SIZE; i += 3) {
-      this.buffer[i] = r;
-      this.buffer[i + 1] = g;
-      this.buffer[i + 2] = b;
+    if (r === 0 && g === 0 && b === 0) {
+      this.buffer.fill(0);
+    } else {
+      for (let i = 0; i < BUFFER_SIZE; i += 3) {
+        this.buffer[i] = r;
+        this.buffer[i + 1] = g;
+        this.buffer[i + 2] = b;
+      }
     }
     return this;
   }
@@ -158,7 +162,7 @@ export class Canvas {
     x1 = Math.floor(x1);
     y1 = Math.floor(y1);
     const c = resolveColor(color);
-    let dx = Math.abs(x1 - x0),
+    const dx = Math.abs(x1 - x0),
       dy = -Math.abs(y1 - y0);
     const sx = x0 < x1 ? 1 : -1,
       sy = y0 < y1 ? 1 : -1;
@@ -215,14 +219,105 @@ export class Canvas {
 
   /** Draw a triangle outline. */
   drawTriangle(
-    x0: number, y0: number,
-    x1: number, y1: number,
-    x2: number, y2: number,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
     color: ColorLike,
   ): this {
     this.drawLine(x0, y0, x1, y1, color);
     this.drawLine(x1, y1, x2, y2, color);
     this.drawLine(x2, y2, x0, y0, color);
+    return this;
+  }
+
+  /** Fill a solid triangle (scanline rasterization). */
+  fillTriangle(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: ColorLike,
+  ): this {
+    const [r, g, b] = resolveColor(color);
+    // Sort vertices by y-coordinate ascending
+    let ax = x0,
+      ay = y0,
+      bx = x1,
+      by = y1,
+      cx = x2,
+      cy = y2;
+    if (ay > by) {
+      [ax, ay, bx, by] = [bx, by, ax, ay];
+    }
+    if (ay > cy) {
+      [ax, ay, cx, cy] = [cx, cy, ax, ay];
+    }
+    if (by > cy) {
+      [bx, by, cx, cy] = [cx, cy, bx, by];
+    }
+
+    const scanline = (
+      ya: number,
+      yb: number,
+      xLeft: (y: number) => number,
+      xRight: (y: number) => number,
+    ) => {
+      const yStart = Math.max(0, Math.ceil(ya));
+      const yEnd = Math.min(DISPLAY_SIZE - 1, Math.floor(yb));
+      for (let y = yStart; y <= yEnd; y++) {
+        const xl = Math.max(0, Math.ceil(xLeft(y)));
+        const xr = Math.min(DISPLAY_SIZE - 1, Math.floor(xRight(y)));
+        for (let x = xl; x <= xr; x++) {
+          const i = (y * DISPLAY_SIZE + x) * 3;
+          this.buffer[i] = r;
+          this.buffer[i + 1] = g;
+          this.buffer[i + 2] = b;
+        }
+      }
+    };
+
+    const lerp = (y: number, ya: number, xa: number, yb: number, xb: number) =>
+      ya === yb ? xa : xa + ((y - ya) / (yb - ya)) * (xb - xa);
+
+    // Upper half: ay → by
+    if (by > ay) {
+      scanline(
+        ay,
+        by - 1,
+        (y) => {
+          const e1 = lerp(y, ay, ax, by, bx);
+          const e2 = lerp(y, ay, ax, cy, cx);
+          return Math.min(e1, e2);
+        },
+        (y) => {
+          const e1 = lerp(y, ay, ax, by, bx);
+          const e2 = lerp(y, ay, ax, cy, cx);
+          return Math.max(e1, e2);
+        },
+      );
+    }
+    // Lower half: by → cy
+    if (cy > by) {
+      scanline(
+        by,
+        cy,
+        (y) => {
+          const e1 = lerp(y, by, bx, cy, cx);
+          const e2 = lerp(y, ay, ax, cy, cx);
+          return Math.min(e1, e2);
+        },
+        (y) => {
+          const e1 = lerp(y, by, bx, cy, cx);
+          const e2 = lerp(y, ay, ax, cy, cx);
+          return Math.max(e1, e2);
+        },
+      );
+    }
     return this;
   }
 
@@ -243,16 +338,26 @@ export class Canvas {
    * Pass `transparentColor: null` to copy all pixels, or a custom RGB to use as the transparent key.
    */
   blit(source: Canvas, dx = 0, dy = 0, opts?: { transparentColor?: RGB | null }): this {
-    const skip = opts?.transparentColor === undefined ? [0, 0, 0] as const : opts.transparentColor;
-    for (let sy = 0; sy < source.height; sy++) {
-      for (let sx = 0; sx < source.width; sx++) {
-        const tx = dx + sx,
-          ty = dy + sy;
-        if (this.inBounds(tx, ty)) {
-          const [r, g, b] = source.getPixel(sx, sy);
-          if (skip && r === skip[0] && g === skip[1] && b === skip[2]) continue;
-          this.setPixel(tx, ty, [r, g, b]);
-        }
+    const skip =
+      opts?.transparentColor === undefined ? ([0, 0, 0] as const) : opts.transparentColor;
+    const src = source.buffer;
+    const dst = this.buffer;
+    // Clamp iteration to the overlapping region
+    const syStart = Math.max(0, -dy);
+    const syEnd = Math.min(source.height, DISPLAY_SIZE - dy);
+    const sxStart = Math.max(0, -dx);
+    const sxEnd = Math.min(source.width, DISPLAY_SIZE - dx);
+    for (let sy = syStart; sy < syEnd; sy++) {
+      for (let sx = sxStart; sx < sxEnd; sx++) {
+        const si = (sy * DISPLAY_SIZE + sx) * 3;
+        const r = src[si]!;
+        const g = src[si + 1]!;
+        const b = src[si + 2]!;
+        if (skip && r === skip[0] && g === skip[1] && b === skip[2]) continue;
+        const di = ((dy + sy) * DISPLAY_SIZE + (dx + sx)) * 3;
+        dst[di] = r;
+        dst[di + 1] = g;
+        dst[di + 2] = b;
       }
     }
     return this;

@@ -5,28 +5,36 @@
  * what the software sends vs. what the LED panel actually shows.
  */
 
-import { Canvas, PixooClient, drawText, savePng, FONT_3x5, type RGB } from '../src/index.js';
+import {
+  Canvas,
+  PixooClient,
+  drawText,
+  measureText,
+  savePng,
+  FONT_3x5,
+  type RGB,
+} from '../src/index.js';
 
 const DEVICE_IP = process.env.PIXOO_IP ?? '10.1.20.114';
 
 // 16 colors to test — good spread across hue/saturation/value
 const TEST_COLORS: Array<{ label: string; rgb: RGB }> = [
-  { label: 'RED',     rgb: [255, 0, 0] },
-  { label: 'GREEN',   rgb: [0, 255, 0] },
-  { label: 'BLUE',    rgb: [0, 0, 255] },
-  { label: 'YELLOW',  rgb: [255, 255, 0] },
-  { label: 'CYAN',    rgb: [0, 255, 255] },
+  { label: 'RED', rgb: [255, 0, 0] },
+  { label: 'GREEN', rgb: [0, 255, 0] },
+  { label: 'BLUE', rgb: [0, 0, 255] },
+  { label: 'YELLOW', rgb: [255, 255, 0] },
+  { label: 'CYAN', rgb: [0, 255, 255] },
   { label: 'MAGENTA', rgb: [255, 0, 255] },
-  { label: 'ORANGE',  rgb: [255, 165, 0] },
-  { label: 'PINK',    rgb: [255, 105, 180] },
-  { label: 'PURPLE',  rgb: [128, 0, 128] },
-  { label: 'TEAL',    rgb: [0, 128, 128] },
-  { label: 'CORAL',   rgb: [255, 127, 80] },
-  { label: 'GOLD',    rgb: [255, 215, 0] },
-  { label: 'WHITE',   rgb: [255, 255, 255] },
-  { label: 'GRAY',    rgb: [128, 128, 128] },
-  { label: 'VIOLET',  rgb: [238, 130, 238] },
-  { label: 'BROWN',   rgb: [139, 69, 19] },
+  { label: 'ORANGE', rgb: [255, 165, 0] },
+  { label: 'PINK', rgb: [255, 105, 180] },
+  { label: 'PURPLE', rgb: [128, 0, 128] },
+  { label: 'TEAL', rgb: [0, 128, 128] },
+  { label: 'CORAL', rgb: [255, 127, 80] },
+  { label: 'GOLD', rgb: [255, 215, 0] },
+  { label: 'WHITE', rgb: [255, 255, 255] },
+  { label: 'GRAY', rgb: [128, 128, 128] },
+  { label: 'VIOLET', rgb: [238, 130, 238] },
+  { label: 'BROWN', rgb: [139, 69, 19] },
 ];
 
 function luminance([r, g, b]: RGB): number {
@@ -58,9 +66,8 @@ for (let i = 0; i < TEST_COLORS.length; i++) {
   const textColor: RGB = luminance(rgb) > 140 ? [0, 0, 0] : [255, 255, 255];
 
   // Center the number in the cell
-  // FONT_3x5: each digit ~3px wide, 1px spacing
-  const textW = num.length * 4 - 1;
-  const textH = 5;
+  const textW = measureText(num, { font: FONT_3x5 });
+  const textH = FONT_3x5.height;
   const tx = x + Math.floor((CELL_W - textW) / 2);
   const ty = y + Math.floor((CELL_H - textH) / 2);
 

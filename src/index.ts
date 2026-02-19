@@ -40,12 +40,7 @@ export {
 export { Animation, buildAnimation } from './animation.js';
 
 // Image
-export {
-  loadImage,
-  downsampleSprite,
-  renderSprite,
-  type SpriteCell,
-} from './image.js';
+export { loadImage, downsampleSprite, renderSprite, type SpriteCell } from './image.js';
 
 // Preview
 export { canvasToPng, savePng, saveAnimationPngs } from './preview.js';

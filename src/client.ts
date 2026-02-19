@@ -35,6 +35,10 @@ export enum Channel {
 export interface PixooClientOptions {
   /** Request timeout in ms (default: 5000). */
   timeout?: number;
+  /** Number of retry attempts on transient failures (default: 1). */
+  retries?: number;
+  /** Base delay in ms before first retry, doubled on each subsequent attempt (default: 250). */
+  retryDelay?: number;
 }
 
 /**
@@ -45,6 +49,8 @@ export interface PixooClientOptions {
 export class PixooClient {
   readonly url: string;
   private readonly timeout: number;
+  private readonly retries: number;
+  private readonly retryDelay: number;
   private picId = Date.now() % 10000;
 
   constructor(
@@ -53,35 +59,53 @@ export class PixooClient {
   ) {
     this.url = `http://${ip}/post`;
     this.timeout = opts.timeout ?? 5000;
+    this.retries = opts.retries ?? 1;
+    this.retryDelay = opts.retryDelay ?? 250;
   }
 
-  /** Send a raw command and return the parsed response. */
+  /** Send a raw command and return the parsed response. Retries on transient network errors. */
   async send(command: string, params: Record<string, unknown> = {}): Promise<PixooResponse> {
     const body = JSON.stringify({ Command: command, ...params });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeout);
-    try {
-      const res = await fetch(this.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        return { error_code: -1, http_status: res.status, message: `HTTP ${res.status} ${res.statusText}` };
+    let lastError: PixooResponse = { error_code: -1, message: 'No attempts made' };
+
+    for (let attempt = 0; attempt <= this.retries; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.retryDelay * (1 << (attempt - 1))));
       }
-      return (await res.json()) as PixooResponse;
-    } catch (err) {
-      const message =
-        err instanceof DOMException && err.name === 'AbortError'
-          ? 'Request timed out'
-          : err instanceof Error
-            ? err.message
-            : 'Unknown error';
-      return { error_code: -1, message };
-    } finally {
-      clearTimeout(timer);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeout);
+      try {
+        const res = await fetch(this.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          lastError = {
+            error_code: -1,
+            http_status: res.status,
+            message: `HTTP ${res.status} ${res.statusText}`,
+          };
+          continue;
+        }
+        return (await res.json()) as PixooResponse;
+      } catch (err) {
+        const isTimeout = err instanceof DOMException && err.name === 'AbortError';
+        lastError = {
+          error_code: -1,
+          message: isTimeout
+            ? 'Request timed out'
+            : err instanceof Error
+              ? err.message
+              : 'Unknown error',
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     }
+
+    return lastError;
   }
 
   // --- Display ---
@@ -222,11 +246,7 @@ export class PixooClient {
 
   // --- System ---
 
-  async playBuzzer(
-    activeCycleMs = 500,
-    offCycleMs = 500,
-    totalMs = 3000,
-  ): Promise<PixooResponse> {
+  async playBuzzer(activeCycleMs = 500, offCycleMs = 500, totalMs = 3000): Promise<PixooResponse> {
     return this.send('Device/PlayBuzzer', {
       ActiveTimeInCycle: activeCycleMs,
       OffTimeInCycle: offCycleMs,
