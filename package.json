@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/pixoo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TypeScript toolkit for Divoom Pixoo-64 — pixel rendering, animations, and device control",
   "type": "module",
   "main": "dist/src/index.js",
@@ -12,18 +12,15 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "demo": "tsc && node dist/scripts/demo.js"
+    "build": "bun run tsc",
+    "dev": "bun run tsc --watch",
+    "demo": "bun run build && bun dist/scripts/demo.js"
   },
   "files": [
     "dist/src"
   ],
-  "engines": {
-    "node": ">=20"
-  },
   "devDependencies": {
-    "@types/node": "^25.3.0",
+    "@types/bun": "^1.2.4",
     "@types/sharp": "^0.32.0",
     "typescript": "^5.9.3"
   },

@@ -203,7 +203,7 @@ src/
 ```
 
 Scripts go in `scripts/`, output PNGs go in `output/`, source images go in `assets/`.
-Run scripts: `npx tsc && node dist/scripts/<name>.js`
+Run scripts: `bun run build && bun dist/scripts/<name>.js`
 Set `PIXOO_IP` env var to override the default device IP (`10.1.20.114`).
 
 ### Loading sprites from PNGs
@@ -238,12 +238,12 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 
 ## Tech Stack
 
-- **Runtime:** Node.js / TypeScript (ESM)
+- **Runtime:** Bun / TypeScript (ESM)
 - **Dependencies:** `sharp` (image loading/resize)
 - **HTTP:** Native `fetch` for device API
 - **Rendering:** Pure TypeScript pixel math for canvas/drawing
 - **Encoding:** Base64 for `PicData` payloads
-- **PNG export:** Hand-rolled encoder using only `node:zlib`
+- **PNG export:** Hand-rolled encoder using `node:zlib` (Bun-compatible)
 
 ## Community References
 
@@ -258,6 +258,17 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 | Font list JSON | https://app.divoom-gz.com/Device/GetTimeDialFontList |
 | Font visual preview | http://dial.divoom-gz.com/dial.php/index.html |
 
+## Scripts
+
+| Script | Description | Run |
+|---|---|---|
+| `hello-claude.ts` | Static frame: Clawd sprite + "Hello from Claude" text | `bun dist/scripts/hello-claude.js` |
+| `hello-claude-animated.ts` | 20-frame animation: bouncing/winking Clawd + text | `bun dist/scripts/hello-claude-animated.js` |
+| `demo.ts` | Full toolkit exercise: shapes, gradients, text, animation | `bun dist/scripts/demo.js` |
+| `color-test.ts` | 4×4 color calibration chart (16 named swatches) | `bun dist/scripts/color-test.js` |
+
+All scripts: `bun run build && bun dist/scripts/<name>.js`
+
 ## Conventions
 
 - All device communication is `POST http://10.1.20.114/post` with JSON body
@@ -266,3 +277,7 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 - Use `PicID` to track animation identity; increment for new animations
 - Keep frame count under 40 for stability
 - Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug
+
+## Maintenance
+
+Keep this file updated when adding scripts, source modules, or discovering new device API behaviors. The Scripts table and Project Structure section should reflect the current state of the repo.

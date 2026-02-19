@@ -6,7 +6,7 @@
 Pixel rendering, animations, and device control over the local HTTP API.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Node](https://img.shields.io/badge/Node.js-%E2%89%A520-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.0-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -28,32 +28,32 @@ Full programmatic control of the Pixoo-64 from TypeScript — bypassing the Divo
 | **Image Loading** | Resize any image to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes and rasterize with scanline fill |
-| **PNG Export** | Zero-dependency encoder (only `node:zlib`) with nearest-neighbor upscaling |
+| **PNG Export** | Zero-dependency encoder (using `node:zlib`) with nearest-neighbor upscaling |
 
 ## Getting Started
 
 ### Prerequisites
 
-- **Node.js** >= 20
+- **Bun** >= 1.0
 - **Divoom Pixoo-64** on the same network
 
 ### Installation
 
 ```bash
-npm install
+bun install
 ```
 
 ### Build & Run
 
 ```bash
 # Build
-npx tsc
+bun run build
 
 # Run a script
-node dist/scripts/hello-claude.js
+bun dist/scripts/hello-claude.js
 
 # Run the demo
-npm run demo
+bun run demo
 ```
 
 > **Tip:** Set the `PIXOO_IP` environment variable to override the default device IP (`10.1.20.114`).
