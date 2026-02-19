@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  FONT_5x7,
-  FONT_3x5,
-  measureText,
-  drawText,
-  drawTextCentered,
-} from './font.js';
+import { FONT_5x7, FONT_3x5, measureText, drawText, drawTextCentered } from './font.js';
 import { Canvas } from './canvas.js';
 
 describe('FONT_5x7', () => {
@@ -144,7 +138,8 @@ describe('drawText', () => {
     drawText(c2, 'A', 0, 0, [255, 0, 0], { scale: 2 });
 
     // At scale 2, the character occupies more pixels
-    let count1 = 0, count2 = 0;
+    let count1 = 0,
+      count2 = 0;
     for (let y = 0; y < 64; y++) {
       for (let x = 0; x < 64; x++) {
         if (c1.getPixel(x, y)[0] === 255) count1++;
@@ -176,7 +171,8 @@ describe('drawTextCentered', () => {
     const expectedStart = Math.floor((64 - textW) / 2);
 
     // Check that roughly centered
-    let minX = 64, maxX = 0;
+    let minX = 64,
+      maxX = 0;
     for (let x = 0; x < 64; x++) {
       for (let y = 0; y < 7; y++) {
         if (c.getPixel(x, y)[0] === 255) {
@@ -187,5 +183,32 @@ describe('drawTextCentered', () => {
     }
     expect(minX).toBeGreaterThanOrEqual(expectedStart - 1);
     expect(minX).toBeLessThanOrEqual(expectedStart + 1);
+  });
+});
+
+describe('auto-uppercase for fonts without lowercase', () => {
+  it('renders lowercase as uppercase with FONT_3x5', () => {
+    const upper = new Canvas();
+    drawText(upper, 'ABC', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+
+    const lower = new Canvas();
+    drawText(lower, 'abc', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+
+    expect(lower.buffer).toEqual(upper.buffer);
+  });
+
+  it('measureText returns same width for lowercase/uppercase with FONT_3x5', () => {
+    expect(measureText('abc', { font: FONT_3x5 })).toBe(measureText('ABC', { font: FONT_3x5 }));
+  });
+
+  it('does not affect FONT_5x7 which has lowercase', () => {
+    const upper = new Canvas();
+    drawText(upper, 'A', 0, 0, [255, 0, 0], { font: FONT_5x7 });
+
+    const lower = new Canvas();
+    drawText(lower, 'a', 0, 0, [255, 0, 0], { font: FONT_5x7 });
+
+    // Should be different since FONT_5x7 has distinct lowercase
+    expect(lower.buffer).not.toEqual(upper.buffer);
   });
 });

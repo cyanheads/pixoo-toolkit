@@ -179,7 +179,14 @@ describe('parseSvgPath', () => {
 describe('fillPolygon', () => {
   it('does nothing for fewer than 3 points', () => {
     const c = new Canvas();
-    fillPolygon(c, [{ x: 0, y: 0 }, { x: 10, y: 10 }], [255, 0, 0]);
+    fillPolygon(
+      c,
+      [
+        { x: 0, y: 0 },
+        { x: 10, y: 10 },
+      ],
+      [255, 0, 0],
+    );
     // Should be all black
     expect(c.getPixel(5, 5)).toEqual([0, 0, 0]);
   });

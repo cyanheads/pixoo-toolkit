@@ -4,9 +4,7 @@ import { Canvas } from './canvas.js';
 import type { RGB } from './color.js';
 
 function makeGrid(rows: number, cols: number, fill: RGB | null = null): SpriteCell[][] {
-  return Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () => ({ color: fill })),
-  );
+  return Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ color: fill })));
 }
 
 describe('renderSprite', () => {
@@ -23,9 +21,7 @@ describe('renderSprite', () => {
   it('skips null (transparent) cells', () => {
     const c = new Canvas();
     c.clear([128, 128, 128]);
-    const grid: SpriteCell[][] = [
-      [{ color: [255, 0, 0] }, { color: null }],
-    ];
+    const grid: SpriteCell[][] = [[{ color: [255, 0, 0] }, { color: null }]];
     renderSprite(c, grid, { scale: 4, x: 0, y: 0 });
     expect(c.getPixel(0, 0)).toEqual([255, 0, 0]);
     expect(c.getPixel(4, 0)).toEqual([128, 128, 128]); // null cell, background preserved

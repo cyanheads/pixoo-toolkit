@@ -55,7 +55,10 @@ describe('canvasToPng', () => {
     // Last 12 bytes: 4 length (0) + 4 type (IEND) + 4 CRC
     const endOffset = png.length - 8;
     const iendType = String.fromCharCode(
-      png[endOffset]!, png[endOffset + 1]!, png[endOffset + 2]!, png[endOffset + 3]!,
+      png[endOffset]!,
+      png[endOffset + 1]!,
+      png[endOffset + 2]!,
+      png[endOffset + 3]!,
     );
     expect(iendType).toBe('IEND');
   });

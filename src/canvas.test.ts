@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { Canvas, DISPLAY_SIZE } from './canvas.js';
-import type { RGB } from './color.js';
 
 describe('Canvas construction', () => {
   it('creates a 64x64 canvas', () => {
@@ -243,6 +242,35 @@ describe('drawTriangle', () => {
   });
 });
 
+describe('fillTriangle', () => {
+  it('fills interior pixels of a triangle', () => {
+    const c = new Canvas();
+    // Large triangle: (5,30) (30,5) (55,30) — plenty of interior
+    c.fillTriangle(5, 30, 30, 5, 55, 30, [255, 0, 0]);
+    // Center of the triangle should be filled
+    expect(c.getPixel(30, 20)).toEqual([255, 0, 0]);
+    expect(c.getPixel(20, 25)).toEqual([255, 0, 0]);
+    expect(c.getPixel(40, 25)).toEqual([255, 0, 0]);
+  });
+
+  it('does not fill outside the triangle', () => {
+    const c = new Canvas();
+    c.fillTriangle(5, 30, 30, 5, 55, 30, [255, 0, 0]);
+    // Well outside
+    expect(c.getPixel(0, 0)).toEqual([0, 0, 0]);
+    expect(c.getPixel(63, 63)).toEqual([0, 0, 0]);
+    // Above the apex
+    expect(c.getPixel(30, 2)).toEqual([0, 0, 0]);
+  });
+
+  it('handles degenerate (collinear) triangle gracefully', () => {
+    const c = new Canvas();
+    // Horizontal line — no area to fill
+    c.fillTriangle(5, 5, 10, 5, 15, 5, [255, 0, 0]);
+    // Should not crash; may or may not fill the line
+  });
+});
+
 describe('blendPixel', () => {
   it('blends foreground onto background', () => {
     const c = new Canvas();
@@ -317,7 +345,7 @@ describe('gradientV', () => {
   it('produces midpoint color near center', () => {
     const c = new Canvas();
     c.gradientV([0, 0, 0], [254, 254, 254]);
-    const [r, g, b] = c.getPixel(0, 32);
+    const [r] = c.getPixel(0, 32);
     // Roughly halfway
     expect(r).toBeGreaterThan(100);
     expect(r).toBeLessThan(155);

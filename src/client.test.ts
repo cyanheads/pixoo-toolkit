@@ -74,7 +74,7 @@ describe('PixooClient.send', () => {
 
   it('returns error for non-ok HTTP status', async () => {
     globalThis.fetch = mockFetch({ error_code: 0 }, 500);
-    const client = new PixooClient(TEST_IP);
+    const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.send('Channel/GetAllConf');
     expect(res.error_code).toBe(-1);
     expect(res['message']).toContain('500');
@@ -82,17 +82,19 @@ describe('PixooClient.send', () => {
 
   it('returns error on network failure', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
-    const client = new PixooClient(TEST_IP);
+    const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.send('Channel/GetAllConf');
     expect(res.error_code).toBe(-1);
     expect(res['message']).toContain('ECONNREFUSED');
   });
 
   it('handles timeout via AbortController', async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(
-      Object.assign(new DOMException('The operation was aborted', 'AbortError')),
-    );
-    const client = new PixooClient(TEST_IP, { timeout: 100 });
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new DOMException('The operation was aborted', 'AbortError')),
+      );
+    const client = new PixooClient(TEST_IP, { timeout: 100, retries: 0 });
     const res = await client.send('Channel/GetAllConf');
     expect(res.error_code).toBe(-1);
     expect(res['message']).toBe('Request timed out');
@@ -100,10 +102,36 @@ describe('PixooClient.send', () => {
 
   it('handles unknown error type', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue('string error');
-    const client = new PixooClient(TEST_IP);
+    const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.send('Channel/GetAllConf');
     expect(res.error_code).toBe(-1);
     expect(res['message']).toBe('Unknown error');
+  });
+
+  it('retries on transient failure then succeeds', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      calls++;
+      if (calls === 1) return Promise.reject(new Error('ECONNRESET'));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ error_code: 0 }),
+      });
+    });
+    const client = new PixooClient(TEST_IP, { retries: 1, retryDelay: 10 });
+    const res = await client.send('Channel/GetAllConf');
+    expect(res.error_code).toBe(0);
+    expect(calls).toBe(2);
+  });
+
+  it('exhausts retries and returns last error', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 10 });
+    const res = await client.send('Channel/GetAllConf');
+    expect(res.error_code).toBe(-1);
+    expect(res['message']).toContain('ECONNREFUSED');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -345,9 +373,8 @@ describe('PixooClient.pushAnimation', () => {
 
   it('stops and resets on frame error', async () => {
     let callCount = 0;
-    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+    globalThis.fetch = vi.fn().mockImplementation(() => {
       callCount++;
-      const body = JSON.parse(opts.body);
       // Fail on the second SendHttpGif (3rd call overall: reset, frame0, frame1)
       const errorCode = callCount === 3 ? -1 : 0;
       return Promise.resolve({

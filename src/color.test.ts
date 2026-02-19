@@ -11,7 +11,6 @@ import {
   NAMED_COLORS,
   Color,
   type RGB,
-  type HSL,
 } from './color.js';
 
 describe('hslToRgb', () => {
@@ -82,7 +81,13 @@ describe('rgbToHsl', () => {
   });
 
   it('round-trips through hslToRgb', () => {
-    const colors: RGB[] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [128, 64, 200], [10, 200, 90]];
+    const colors: RGB[] = [
+      [255, 0, 0],
+      [0, 255, 0],
+      [0, 0, 255],
+      [128, 64, 200],
+      [10, 200, 90],
+    ];
     for (const rgb of colors) {
       const hsl = rgbToHsl(rgb);
       const back = hslToRgb(hsl);
@@ -132,6 +137,16 @@ describe('parseHexString', () => {
   it('handles black', () => {
     expect(parseHexString('#000000')).toEqual([0, 0, 0]);
   });
+
+  it('returns null for invalid hex characters', () => {
+    expect(parseHexString('#zzzzzz')).toBeNull();
+    expect(parseHexString('xyz')).toBeNull();
+  });
+
+  it('returns null for wrong-length strings', () => {
+    expect(parseHexString('#abcd')).toBeNull();
+    expect(parseHexString('a')).toBeNull();
+  });
 });
 
 describe('resolveColor', () => {
@@ -159,6 +174,10 @@ describe('resolveColor', () => {
 
   it('resolves claude brand color', () => {
     expect(resolveColor('claude')).toEqual([230, 150, 70]);
+  });
+
+  it('returns white for unresolvable strings', () => {
+    expect(resolveColor('notacolor')).toEqual([255, 255, 255]);
   });
 });
 
