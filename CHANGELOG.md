@@ -10,18 +10,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `PixooClient.pushAnimation()` now calls `resetGifId()` before sending frames, matching the behavior of `push()`. Previously, animations could be silently ignored by the device.
+- `PixooClient.buzzer()` sent incorrect command name (`Device/PlayTFGif` → `Device/PlayBuzzer`).
+- `PixooClient.send()` now returns a structured error on non-OK HTTP responses instead of throwing.
+- `PixooClient.pushAnimation()` returns an error immediately when given an empty frames array.
+- `parseHexString` and `resolveColor` now guard against `NaN` from invalid hex input.
+- `NAMED_COLORS.claude` corrected from `[230, 150, 60]` to `[230, 150, 70]`.
+- `FONT_3x5` glyph for `V` was identical to `U`; corrected to taper at row 4.
+- `measureText` / `drawText` now fall back to the `?` glyph for unknown characters instead of using nominal width.
+- SVG path `Z`/`z` closePath now returns to the subpath start instead of always the first point.
+- `Canvas` constructor validates buffer size, throwing on mismatched input.
+- Fixed `package.json` export paths (`dist/index.js` → `dist/src/index.js`).
 
 ### Changed
 
 - Bumped `typescript` from `^5.7.0` to `^5.9.3`.
 - Bumped `@types/sharp` from `^0.31.1` to `^0.32.0`.
-- Added `bun.lock` lockfile.
+- `PixooClient.sendText()` `color` option now accepts `ColorLike` (RGB tuple, hex number, named string) instead of only hex strings.
+- `downsampleSprite` return type renamed `width`/`height` to `cols`/`rows` for clarity.
+- `downsampleSprite` returns an empty grid instead of crashing when the source image has no visible pixels.
+- Extracted shared `glyphWidth` helper in font module.
+- All scripts read device IP from `PIXOO_IP` environment variable with fallback to `10.1.20.114`.
+- Scripts use `NAMED_COLORS.claude` instead of hardcoded color tuples.
+- Scripts import from barrel export instead of direct internal paths.
 
 ### Added
 
+- SVG path parser supports Q/q, S/s, T/t, A/a commands (quadratic bézier, smooth cubic/quadratic, arc).
+- Barrel export (`src/index.ts`) now includes `parseSvgPath`, `fillPolygon`, `renderSvgPath`, and `Point` type.
 - `scripts/color-test.ts`: Color calibration chart — 4×4 grid of 16 numbered swatches with auto-contrast labels for verifying LED color accuracy.
 - `scripts/hello-claude-animated.ts`: Animated "Hello from Claude" display — 20-frame sequence with sprite bouncing, leaning, and winking.
 - `.gitignore`: Added `.DS_Store` exclusion.
+
+### Removed
+
+- Deleted `bun.lock` lockfile (use npm instead).
 
 ## [0.1.0] — 2026-02-18
 
