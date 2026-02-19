@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `scripts/color-test.ts`: Color calibration chart — 4×4 grid of 16 numbered swatches with auto-contrast labels for verifying LED color accuracy.
+- `scripts/hello-claude-animated.ts`: Animated "Hello from Claude" display — 20-frame sequence with sprite bouncing, leaning, and winking.
+- `.gitignore`: Added `.DS_Store` exclusion.
+
 ## [0.1.0] — 2026-02-18
 
 ### Added
