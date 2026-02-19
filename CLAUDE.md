@@ -121,7 +121,7 @@ Font list: `https://app.divoom-gz.com/Device/GetTimeDialFontList`
 
 ```json
 {
-  "Command": "Device/PlayTFGif",
+  "Command": "Device/PlayBuzzer",
   "ActiveTimeInCycle": 500,
   "OffTimeInCycle": 500,
   "PlayTotalTime": 3000
@@ -204,6 +204,7 @@ src/
 
 Scripts go in `scripts/`, output PNGs go in `output/`, source images go in `assets/`.
 Run scripts: `npx tsc && node dist/scripts/<name>.js`
+Set `PIXOO_IP` env var to override the default device IP (`10.1.20.114`).
 
 ### Loading sprites from PNGs
 
