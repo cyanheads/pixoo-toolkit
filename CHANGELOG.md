@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-02-19
+
+### Changed
+
+- Migrated runtime from Node.js to Bun.
+- Replaced `@types/node` with `@types/bun` in devDependencies.
+- Removed `engines` field from package.json (Bun manages its own version).
+- Updated all npm scripts to use `bun run` / `bun` instead of `npx` / `node`.
+- Updated CLAUDE.md: runtime references, script run commands, added Scripts table and Maintenance section.
+- Updated README.md: badge, prerequisites, install/build/run commands reflect Bun.
+
+### Added
+
+- `bun.lock` lockfile.
+
 ## [0.1.1] — 2026-02-19
 
 ### Fixed
