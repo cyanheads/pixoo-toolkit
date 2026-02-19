@@ -22,6 +22,7 @@ export interface DeviceConfig {
   GyrateAngle: number;
   MirrorFlag: number;
   LightSwitch: number;
+  SelectIndex: number;
 }
 
 export enum Channel {
@@ -70,6 +71,14 @@ export class PixooClient {
         return { error_code: -1, http_status: res.status, message: `HTTP ${res.status} ${res.statusText}` };
       }
       return (await res.json()) as PixooResponse;
+    } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Request timed out'
+          : err instanceof Error
+            ? err.message
+            : 'Unknown error';
+      return { error_code: -1, message };
     } finally {
       clearTimeout(timer);
     }
@@ -85,7 +94,7 @@ export class PixooClient {
   /** Push a single canvas frame to the display. */
   async push(canvas: Canvas, speed = 100): Promise<PixooResponse> {
     await this.resetGifId();
-    this.picId++;
+    this.picId = (this.picId + 1) % 10000;
     return this.send('Draw/SendHttpGif', {
       PicNum: 1,
       PicWidth: 64,
@@ -106,7 +115,7 @@ export class PixooClient {
       return { error_code: -1, message: 'No frames provided' };
     }
     await this.resetGifId();
-    this.picId++;
+    this.picId = (this.picId + 1) % 10000;
     let lastResponse: PixooResponse = { error_code: -1 };
     for (let i = 0; i < frames.length; i++) {
       lastResponse = await this.send('Draw/SendHttpGif', {
@@ -117,7 +126,10 @@ export class PixooClient {
         PicSpeed: speed,
         PicData: frames[i]!.toBase64(),
       });
-      if (lastResponse.error_code !== 0) return lastResponse;
+      if (lastResponse.error_code !== 0) {
+        await this.resetGifId();
+        return lastResponse;
+      }
     }
     return lastResponse;
   }
@@ -222,7 +234,10 @@ export class PixooClient {
     });
   }
 
-  /** Send a batch of commands in a single request. */
+  /**
+   * Send a batch of commands in a single request via Draw/CommandList.
+   * Note: multi-frame Draw/SendHttpGif calls cannot be batched — use pushAnimation() instead.
+   */
   async batch(
     commands: Array<{ Command: string; [key: string]: unknown }>,
   ): Promise<PixooResponse> {

@@ -153,6 +153,10 @@ export class Canvas {
 
   /** Draw an arbitrary line (Bresenham). */
   drawLine(x0: number, y0: number, x1: number, y1: number, color: ColorLike): this {
+    x0 = Math.floor(x0);
+    y0 = Math.floor(y0);
+    x1 = Math.floor(x1);
+    y1 = Math.floor(y1);
     const c = resolveColor(color);
     let dx = Math.abs(x1 - x0),
       dy = -Math.abs(y1 - y0);
@@ -233,17 +237,21 @@ export class Canvas {
     return this.setPixel(x, y, lerpColor(bg, fg, alpha));
   }
 
-  /** Composite another canvas on top at an offset. Black pixels ([0,0,0]) are treated as transparent and skipped. */
-  blit(source: Canvas, dx = 0, dy = 0): this {
+  /**
+   * Composite another canvas on top at an offset.
+   * By default, black pixels ([0,0,0]) are treated as transparent and skipped.
+   * Pass `transparentColor: null` to copy all pixels, or a custom RGB to use as the transparent key.
+   */
+  blit(source: Canvas, dx = 0, dy = 0, opts?: { transparentColor?: RGB | null }): this {
+    const skip = opts?.transparentColor === undefined ? [0, 0, 0] as const : opts.transparentColor;
     for (let sy = 0; sy < source.height; sy++) {
       for (let sx = 0; sx < source.width; sx++) {
         const tx = dx + sx,
           ty = dy + sy;
         if (this.inBounds(tx, ty)) {
           const [r, g, b] = source.getPixel(sx, sy);
-          if (r !== 0 || g !== 0 || b !== 0) {
-            this.setPixel(tx, ty, [r, g, b]);
-          }
+          if (skip && r === skip[0] && g === skip[1] && b === skip[2]) continue;
+          this.setPixel(tx, ty, [r, g, b]);
         }
       }
     }

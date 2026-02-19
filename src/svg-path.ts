@@ -26,7 +26,7 @@ function tokenize(d: string): Array<{ cmd: string; args: number[] }> {
     const args = argStr.length > 0
       ? argStr
           .replace(/,/g, ' ')
-          .replace(/-/g, ' -')
+          .replace(/(?<![eE])-/g, ' -')
           .split(/\s+/)
           .filter(Boolean)
           .map(Number)
@@ -266,6 +266,7 @@ export function renderSvgPath(
   const points = parseSvgPath(d);
   const [tx, ty, tw, th] = targetRect;
   const [vw, vh] = svgViewBox;
+  if (vw === 0 || vh === 0) return;
 
   const scaled = points.map((p) => ({
     x: tx + (p.x / vw) * tw,

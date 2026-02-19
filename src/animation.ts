@@ -15,6 +15,10 @@ export class Animation {
    * @param speed - Milliseconds per frame (default: 100).
    */
   constructor(frameCount: number, speed = 100) {
+    if (frameCount <= 0) throw new RangeError('frameCount must be positive');
+    if (frameCount > 40) {
+      console.warn(`Animation has ${frameCount} frames; Pixoo-64 may become unstable above 40`);
+    }
     this.frames = Array.from({ length: frameCount }, () => new Canvas());
     this.speed = speed;
   }

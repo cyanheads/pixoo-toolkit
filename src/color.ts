@@ -95,12 +95,12 @@ export function lerpColor(a: RGB, b: RGB, t: number): RGB {
   ];
 }
 
-/** Dim a color by a factor (0 = black, 1 = unchanged). */
+/** Scale a color by a factor (0 = black, 1 = unchanged). Output is clamped to [0, 255]. */
 export function dimColor(c: RGB, factor: number): RGB {
   return [
-    Math.round(c[0] * factor),
-    Math.round(c[1] * factor),
-    Math.round(c[2] * factor),
+    Math.min(255, Math.max(0, Math.round(c[0] * factor))),
+    Math.min(255, Math.max(0, Math.round(c[1] * factor))),
+    Math.min(255, Math.max(0, Math.round(c[2] * factor))),
   ];
 }
 
