@@ -2,6 +2,7 @@ import {
   PixooClient,
   Canvas,
   Color,
+  NAMED_COLORS,
   drawText,
   drawTextCentered,
   savePng,
@@ -11,13 +12,13 @@ import {
   renderSprite,
 } from '../src/index.js';
 
-const device = new PixooClient('10.1.20.114');
+const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
 const canvas = new Canvas();
 
 canvas.clear([12, 8, 20]);
 
 // --- Clawd: load from actual PNG ---
-const claudeOrange: [number, number, number] = [230, 150, 70];
+const claudeOrange = NAMED_COLORS.claude;
 const sprite = await downsampleSprite('assets/clawd.png', 10, 8);
 renderSprite(canvas, sprite.grid, {
   scale: 4,
@@ -34,7 +35,7 @@ const claudeW = measureText('Claude', { font: FONT_5x7 });
 const totalW = fromW + claudeW;
 const startX = Math.floor((64 - totalW) / 2);
 drawText(canvas, 'from ', startX, 12, Color.WHITE, { font: FONT_5x7 });
-drawText(canvas, 'Claude', startX + fromW, 12, [230, 150, 70], { font: FONT_5x7 });
+drawText(canvas, 'Claude', startX + fromW, 12, claudeOrange, { font: FONT_5x7 });
 
 // --- Push ---
 await savePng(canvas, 'output/hello_claude.png');

@@ -1,6 +1,7 @@
 import {
   PixooClient,
   Color,
+  NAMED_COLORS,
   drawText,
   drawTextCentered,
   savePng,
@@ -12,8 +13,8 @@ import {
   type RGB,
 } from '../src/index.js';
 
-const device = new PixooClient('10.1.20.114');
-const claudeOrange: RGB = [230, 150, 70];
+const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
+const claudeOrange = NAMED_COLORS.claude;
 const eyeColor: RGB = [20, 12, 12];
 
 // Load base sprite

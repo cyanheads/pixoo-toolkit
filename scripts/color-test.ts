@@ -5,10 +5,9 @@
  * what the software sends vs. what the LED panel actually shows.
  */
 
-import { Canvas, PixooClient, drawText, FONT_3x5, type RGB } from '../src/index.js';
-import { savePng } from '../src/preview.js';
+import { Canvas, PixooClient, drawText, savePng, FONT_3x5, type RGB } from '../src/index.js';
 
-const DEVICE_IP = '10.1.20.114';
+const DEVICE_IP = process.env.PIXOO_IP ?? '10.1.20.114';
 
 // 16 colors to test — good spread across hue/saturation/value
 const TEST_COLORS: Array<{ label: string; rgb: RGB }> = [

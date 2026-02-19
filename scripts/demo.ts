@@ -16,7 +16,7 @@ import {
   FONT_5x7,
 } from '../src/index.js';
 
-const DEVICE_IP = '10.1.20.114';
+const DEVICE_IP = process.env.PIXOO_IP ?? '10.1.20.114';
 const device = new PixooClient(DEVICE_IP);
 
 // --- Static frame demo ---
@@ -44,8 +44,8 @@ drawTextCentered(canvas, 'TOOLKIT', 14, [100, 200, 255], { font: FONT_3x5 });
 drawText(canvas, 'v0.1', 23, 56, [80, 80, 100], { font: FONT_3x5 });
 
 // Save preview
-await savePng(canvas, 'demo_static.png');
-console.log('Saved demo_static.png');
+await savePng(canvas, 'output/demo_static.png');
+console.log('Saved output/demo_static.png');
 
 // Push to device
 const res = await device.push(canvas);
@@ -80,8 +80,8 @@ const anim = buildAnimation(20, 120, (frame, i, total) => {
 });
 
 // Save first frame preview
-await savePng(anim.frames[0]!, 'demo_anim_frame0.png');
-console.log('Saved demo_anim_frame0.png');
+await savePng(anim.frames[0]!, 'output/demo_anim_frame0.png');
+console.log('Saved output/demo_anim_frame0.png');
 
 // Push animation to device
 const animRes = await device.pushAnimation(anim.frames, anim.speed);
