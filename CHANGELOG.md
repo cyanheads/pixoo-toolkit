@@ -5,18 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.1] — 2026-02-19
 
 ### Fixed
 
 - `PixooClient.pushAnimation()` now calls `resetGifId()` before sending frames, matching the behavior of `push()`. Previously, animations could be silently ignored by the device.
 - `PixooClient.buzzer()` sent incorrect command name (`Device/PlayTFGif` → `Device/PlayBuzzer`).
 - `PixooClient.send()` now returns a structured error on non-OK HTTP responses instead of throwing.
+- `PixooClient.send()` now catches network/timeout errors gracefully instead of throwing unhandled exceptions.
 - `PixooClient.pushAnimation()` returns an error immediately when given an empty frames array.
+- `PixooClient.pushAnimation()` resets GIF ID on mid-animation errors for cleaner recovery.
+- `PixooClient.picId` wraps at 10000 to prevent overflow after sustained use.
 - `parseHexString` and `resolveColor` now guard against `NaN` from invalid hex input.
 - `NAMED_COLORS.claude` corrected from `[230, 150, 60]` to `[230, 150, 70]`.
 - `FONT_3x5` glyph for `V` was identical to `U`; corrected to taper at row 4.
 - `measureText` / `drawText` now fall back to the `?` glyph for unknown characters instead of using nominal width.
+- `Canvas.drawLine()` now floors input coordinates for correct Bresenham rendering.
+- `dimColor()` output clamped to [0, 255] to prevent invalid RGB values.
+- SVG path tokenizer no longer incorrectly splits negative signs after scientific notation exponents (e.g. `1e-5`).
+- `renderSvgPath` guards against zero-dimension viewBox.
 - SVG path `Z`/`z` closePath now returns to the subpath start instead of always the first point.
 - `Canvas` constructor validates buffer size, throwing on mismatched input.
 - Fixed `package.json` export paths (`dist/index.js` → `dist/src/index.js`).
@@ -26,15 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped `typescript` from `^5.7.0` to `^5.9.3`.
 - Bumped `@types/sharp` from `^0.31.1` to `^0.32.0`.
 - `PixooClient.sendText()` `color` option now accepts `ColorLike` (RGB tuple, hex number, named string) instead of only hex strings.
+- `DeviceConfig` type now includes `SelectIndex`.
+- `Canvas.blit()` accepts an optional `transparentColor` parameter (default: black); pass `null` to copy all pixels.
+- `Animation` constructor validates `frameCount` (must be positive) and warns when exceeding 40 frames.
 - `downsampleSprite` return type renamed `width`/`height` to `cols`/`rows` for clarity.
 - `downsampleSprite` returns an empty grid instead of crashing when the source image has no visible pixels.
 - Extracted shared `glyphWidth` helper in font module.
 - All scripts read device IP from `PIXOO_IP` environment variable with fallback to `10.1.20.114`.
 - Scripts use `NAMED_COLORS.claude` instead of hardcoded color tuples.
 - Scripts import from barrel export instead of direct internal paths.
+- Removed unused `run` script from package.json.
+- Added `files` field to package.json for npm publishing.
 
 ### Added
 
+- MIT `LICENSE` file.
 - SVG path parser supports Q/q, S/s, T/t, A/a commands (quadratic bézier, smooth cubic/quadratic, arc).
 - Barrel export (`src/index.ts`) now includes `parseSvgPath`, `fillPolygon`, `renderSvgPath`, and `Point` type.
 - `scripts/color-test.ts`: Color calibration chart — 4×4 grid of 16 numbered swatches with auto-contrast labels for verifying LED color accuracy.
