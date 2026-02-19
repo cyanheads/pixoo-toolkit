@@ -49,6 +49,9 @@ bun install
 # Build
 bun run build
 
+# Run tests
+bun run test
+
 # Run a script
 bun dist/scripts/hello-claude.js
 

@@ -200,6 +200,7 @@ src/
   preview.ts    Zero-dep PNG encoder, savePng()
   svg-path.ts   SVG path parser + polygon rasterizer
   index.ts      Barrel export
+  *.test.ts     Colocated vitest tests (excluded from build)
 ```
 
 Scripts go in `scripts/`, output PNGs go in `output/`, source images go in `assets/`.
@@ -244,6 +245,7 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 - **Rendering:** Pure TypeScript pixel math for canvas/drawing
 - **Encoding:** Base64 for `PicData` payloads
 - **PNG export:** Hand-rolled encoder using `node:zlib` (Bun-compatible)
+- **Testing:** Vitest (colocated `*.test.ts` files, `bun run test`)
 
 ## Community References
 
