@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-02-19
+
+### Added
+
+- ESLint (v10, flat config with typescript-eslint strict) and Prettier (v3.8) tooling.
+- `lint`, `format`, and `format:check` npm scripts.
+- `Canvas.fillTriangle()` — scanline rasterization for filled triangles.
+- `PixooClient` retry support — `retries` and `retryDelay` options with exponential backoff on transient failures.
+- `resolveGlyph()` helper in font module — auto-uppercases characters when a font lacks lowercase glyphs (e.g. FONT_3x5).
+- Tests for `fillTriangle`, `parseHexString` null validation, `resolveColor` fallback, client retry logic, and font auto-uppercase.
+
+### Changed
+
+- `parseHexString()` now returns `RGB | null` instead of silently coercing invalid input to zeros.
+- `resolveColor()` returns white `[255, 255, 255]` for unresolvable color strings.
+- `NAMED_COLORS` typed as `Readonly<Record<string, RGB>>`.
+- `Canvas.clear()` optimized — uses `buffer.fill(0)` for black.
+- `Canvas.blit()` optimized — direct buffer access with pre-clamped bounds instead of per-pixel `inBounds` checks.
+- `saveAnimationPngs()` parallelized with `Promise.all`.
+- Cached `TextEncoder` instance in preview module.
+- `let` → `const` fix in `Canvas.drawLine()`.
+- Applied Prettier formatting across all source, test, and script files.
+- Removed `@types/sharp` devDependency (types bundled with sharp 0.34).
+
 ## [0.1.3] — 2026-02-19
 
 ### Added
