@@ -63,18 +63,19 @@ export function parseHexString(s: string): RGB {
     const r = parseInt(clean[0]! + clean[0]!, 16);
     const g = parseInt(clean[1]! + clean[1]!, 16);
     const b = parseInt(clean[2]! + clean[2]!, 16);
-    return [r, g, b];
+    return [r || 0, g || 0, b || 0];
   }
-  return [
-    parseInt(clean.slice(0, 2), 16),
-    parseInt(clean.slice(2, 4), 16),
-    parseInt(clean.slice(4, 6), 16),
-  ];
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return [r || 0, g || 0, b || 0];
 }
 
 /** Resolve any ColorLike to an RGB tuple. */
 export function resolveColor(c: ColorLike): RGB {
-  if (Array.isArray(c)) return c as unknown as RGB;
+  if (Array.isArray(c)) {
+    return [c[0] ?? 0, c[1] ?? 0, c[2] ?? 0];
+  }
   if (typeof c === 'number') return hexToRgb(c);
   if (typeof c === 'string') {
     const named = NAMED_COLORS[c.toLowerCase()];
@@ -136,8 +137,8 @@ export const NAMED_COLORS: Record<string, RGB> = {
   violet: [238, 130, 238],
   turquoise: [64, 224, 208],
   // Claude brand
-  claude: [230, 150, 60],
-  'claude-orange': [230, 150, 60],
+  claude: [230, 150, 70],
+  'claude-orange': [230, 150, 70],
   'claude-tan': [210, 180, 140],
 } as const;
 

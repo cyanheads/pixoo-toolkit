@@ -17,6 +17,9 @@ export class Canvas {
   readonly height = DISPLAY_SIZE;
 
   constructor(source?: Uint8Array) {
+    if (source && source.length !== BUFFER_SIZE) {
+      throw new Error(`Canvas buffer must be exactly ${BUFFER_SIZE} bytes, got ${source.length}`);
+    }
     this.buffer = source ? new Uint8Array(source) : new Uint8Array(BUFFER_SIZE);
   }
 
@@ -230,7 +233,7 @@ export class Canvas {
     return this.setPixel(x, y, lerpColor(bg, fg, alpha));
   }
 
-  /** Composite another canvas on top at an offset. */
+  /** Composite another canvas on top at an offset. Black pixels ([0,0,0]) are treated as transparent and skipped. */
   blit(source: Canvas, dx = 0, dy = 0): this {
     for (let sy = 0; sy < source.height; sy++) {
       for (let sx = 0; sx < source.width; sx++) {

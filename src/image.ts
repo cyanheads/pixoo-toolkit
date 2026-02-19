@@ -94,8 +94,8 @@ export async function downsampleSprite(
   grid: SpriteCell[][];
   bodyColor: RGB;
   darkColor: RGB;
-  width: number;
-  height: number;
+  cols: number;
+  rows: number;
 }> {
   const alphaThresh = opts.alphaThreshold ?? 128;
   const whiteThresh = opts.whiteThreshold ?? 220;
@@ -134,6 +134,14 @@ export async function downsampleSprite(
         maxY = Math.max(maxY, y);
       }
     }
+  }
+
+  // No visible pixels — return empty grid
+  if (minX > maxX || minY > maxY) {
+    const emptyGrid: SpriteCell[][] = Array.from({ length: rows }, () =>
+      Array.from({ length: cols }, () => ({ color: null })),
+    );
+    return { grid: emptyGrid, bodyColor: [0, 0, 0], darkColor: [0, 0, 0], cols, rows };
   }
 
   const bw = maxX - minX + 1;
@@ -206,7 +214,7 @@ export async function downsampleSprite(
     grid.push(row);
   }
 
-  return { grid, bodyColor, darkColor, width: cols, height: rows };
+  return { grid, bodyColor, darkColor, cols, rows };
 }
 
 /**

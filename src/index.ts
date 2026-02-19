@@ -49,3 +49,6 @@ export {
 
 // Preview
 export { canvasToPng, savePng, saveAnimationPngs } from './preview.js';
+
+// SVG
+export { type Point, parseSvgPath, fillPolygon, renderSvgPath } from './svg-path.js';

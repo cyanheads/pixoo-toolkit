@@ -42,12 +42,17 @@ export function parseSvgPath(d: string): Point[] {
   const points: Point[] = [];
   let cx = 0,
     cy = 0;
+  // Track subpath start for Z/z closePath
+  let subpathStartX = 0,
+    subpathStartY = 0;
 
   for (const { cmd, args } of tokens) {
     switch (cmd) {
       case 'M':
         cx = args[0]!;
         cy = args[1]!;
+        subpathStartX = cx;
+        subpathStartY = cy;
         points.push({ x: cx, y: cy });
         // Implicit lineTo for remaining pairs
         for (let i = 2; i + 1 < args.length; i += 2) {
@@ -59,6 +64,8 @@ export function parseSvgPath(d: string): Point[] {
       case 'm':
         cx += args[0]!;
         cy += args[1]!;
+        subpathStartX = cx;
+        subpathStartY = cy;
         points.push({ x: cx, y: cy });
         for (let i = 2; i + 1 < args.length; i += 2) {
           cx += args[i]!;
@@ -107,7 +114,9 @@ export function parseSvgPath(d: string): Point[] {
       case 'Z':
       case 'z':
         if (points.length > 0) {
-          points.push({ x: points[0]!.x, y: points[0]!.y });
+          cx = subpathStartX;
+          cy = subpathStartY;
+          points.push({ x: cx, y: cy });
         }
         break;
       // Approximate curves as straight lines to endpoints
@@ -125,8 +134,67 @@ export function parseSvgPath(d: string): Point[] {
           points.push({ x: cx, y: cy });
         }
         break;
+      // Approximate quadratic bezier as line to endpoint
+      case 'Q':
+        for (let i = 0; i + 3 < args.length; i += 4) {
+          cx = args[i + 2]!;
+          cy = args[i + 3]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      case 'q':
+        for (let i = 0; i + 3 < args.length; i += 4) {
+          cx += args[i + 2]!;
+          cy += args[i + 3]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      // Smooth cubic bezier — line to endpoint
+      case 'S':
+        for (let i = 0; i + 3 < args.length; i += 4) {
+          cx = args[i + 2]!;
+          cy = args[i + 3]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      case 's':
+        for (let i = 0; i + 3 < args.length; i += 4) {
+          cx += args[i + 2]!;
+          cy += args[i + 3]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      // Smooth quadratic bezier — line to endpoint
+      case 'T':
+        for (let i = 0; i + 1 < args.length; i += 2) {
+          cx = args[i]!;
+          cy = args[i + 1]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      case 't':
+        for (let i = 0; i + 1 < args.length; i += 2) {
+          cx += args[i]!;
+          cy += args[i + 1]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      // Arc — skip to endpoint (7 params per arc)
+      case 'A':
+        for (let i = 0; i + 6 < args.length; i += 7) {
+          cx = args[i + 5]!;
+          cy = args[i + 6]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
+      case 'a':
+        for (let i = 0; i + 6 < args.length; i += 7) {
+          cx += args[i + 5]!;
+          cy += args[i + 6]!;
+          points.push({ x: cx, y: cy });
+        }
+        break;
       default:
-        // Skip unsupported commands
         break;
     }
   }

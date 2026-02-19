@@ -1,4 +1,5 @@
 import { Canvas } from './canvas.js';
+import { type ColorLike, resolveColor, rgbToHex } from './color.js';
 
 /** Response from the Pixoo device. */
 export interface PixooResponse {
@@ -65,6 +66,9 @@ export class PixooClient {
         body,
         signal: controller.signal,
       });
+      if (!res.ok) {
+        return { error_code: -1, http_status: res.status, message: `HTTP ${res.status} ${res.statusText}` };
+      }
       return (await res.json()) as PixooResponse;
     } finally {
       clearTimeout(timer);
@@ -98,6 +102,9 @@ export class PixooClient {
    * @param speed - Milliseconds per frame.
    */
   async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResponse> {
+    if (frames.length === 0) {
+      return { error_code: -1, message: 'No frames provided' };
+    }
     await this.resetGifId();
     this.picId++;
     let lastResponse: PixooResponse = { error_code: -1 };
@@ -154,9 +161,12 @@ export class PixooClient {
     font?: number;
     width?: number;
     speed?: number;
-    color?: string;
+    color?: ColorLike;
     align?: number;
   }): Promise<PixooResponse> {
+    const rgb = resolveColor(opts.color ?? [255, 255, 255]);
+    const hex = rgbToHex(rgb);
+    const colorStr = `#${hex.toString(16).padStart(6, '0')}`;
     return this.send('Draw/SendHttpText', {
       TextId: opts.id,
       x: opts.x,
@@ -166,7 +176,7 @@ export class PixooClient {
       TextWidth: opts.width ?? 64,
       TextString: opts.text,
       speed: opts.speed ?? 0,
-      color: opts.color ?? '#FFFFFF',
+      color: colorStr,
       align: opts.align ?? 1,
     });
   }
@@ -205,7 +215,7 @@ export class PixooClient {
     offCycleMs = 500,
     totalMs = 3000,
   ): Promise<PixooResponse> {
-    return this.send('Device/PlayTFGif', {
+    return this.send('Device/PlayBuzzer', {
       ActiveTimeInCycle: activeCycleMs,
       OffTimeInCycle: offCycleMs,
       PlayTotalTime: totalMs,

@@ -177,7 +177,7 @@ const GLYPHS_3x5: Record<string, readonly number[]> = {
   S: [0b011, 0b100, 0b010, 0b001, 0b110],
   T: [0b111, 0b010, 0b010, 0b010, 0b010],
   U: [0b101, 0b101, 0b101, 0b101, 0b010],
-  V: [0b101, 0b101, 0b101, 0b101, 0b010],
+  V: [0b101, 0b101, 0b101, 0b010, 0b010],
   W: [0b101, 0b101, 0b101, 0b111, 0b101],
   X: [0b101, 0b101, 0b010, 0b101, 0b101],
   Y: [0b101, 0b101, 0b010, 0b010, 0b010],
@@ -203,6 +203,18 @@ export interface TextOptions {
   scale?: number;
 }
 
+/** Calculate the rendered width of a glyph from its bitmask data. */
+function glyphWidth(font: BitmapFont, ch: string, glyph: readonly number[]): number {
+  let maxBit = 0;
+  for (const row of glyph) {
+    if (row > 0) {
+      const bits = Math.floor(Math.log2(row)) + 1;
+      if (bits > maxBit) maxBit = bits;
+    }
+  }
+  return Math.max(maxBit, ch === ' ' ? font.width : 1);
+}
+
 /** Measure the pixel width of a string without drawing it. */
 export function measureText(text: string, opts: TextOptions = {}): number {
   const font = opts.font ?? FONT_5x7;
@@ -211,21 +223,12 @@ export function measureText(text: string, opts: TextOptions = {}): number {
   let width = 0;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]!;
-    const glyph = font.glyphs[ch];
+    const glyph = font.glyphs[ch] ?? font.glyphs['?'];
     if (!glyph) {
       width += (font.width + spacing) * scale;
       continue;
     }
-    // Calculate actual glyph width from bitmask data
-    let maxBit = 0;
-    for (const row of glyph) {
-      if (row > 0) {
-        const bits = Math.floor(Math.log2(row)) + 1;
-        if (bits > maxBit) maxBit = bits;
-      }
-    }
-    const glyphWidth = Math.max(maxBit, ch === ' ' ? font.width : 1);
-    width += (glyphWidth + spacing) * scale;
+    width += (glyphWidth(font, ch, glyph) + spacing) * scale;
   }
   // Remove trailing spacing
   if (text.length > 0) width -= spacing * scale;
@@ -255,15 +258,7 @@ export function drawText(
       continue;
     }
 
-    // Find actual width of this glyph
-    let maxBit = 0;
-    for (const row of glyph) {
-      if (row > 0) {
-        const bits = Math.floor(Math.log2(row)) + 1;
-        if (bits > maxBit) maxBit = bits;
-      }
-    }
-    const glyphWidth = Math.max(maxBit, ch === ' ' ? font.width : 1);
+    const gw = glyphWidth(font, ch, glyph);
 
     // Render glyph
     for (let gy = 0; gy < font.height; gy++) {
@@ -283,7 +278,7 @@ export function drawText(
       }
     }
 
-    cx += (glyphWidth + spacing) * scale;
+    cx += (gw + spacing) * scale;
   }
 
   return cx - x;
