@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-02-20
+
+### Added
+
+- Lowercase a-z glyphs for `FONT_3x5` — distinct ascender/descender/body forms within the 3×5 grid.
+- Tests for lowercase glyph existence and distinct rendering in `FONT_3x5`.
+- Test for auto-uppercase fallback when a font lacks a specific glyph.
+
+### Changed
+
+- README module descriptions expanded with full feature lists (Canvas, Device Client).
+- README Device API section now includes import example.
+- Bun version requirement updated to >= 1.3.
+
 ## [0.2.2] — 2026-02-20
 
 ### Added

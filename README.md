@@ -22,10 +22,10 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 
 | Module | What it does |
 |---|---|
-| **Canvas** | Square RGB pixel buffer (16/32/64) — rects, circles, lines, triangles, gradients, blending, scrolling |
-| **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact) with measurement and centered rendering |
+| **Canvas** | Square RGB pixel buffer (16/32/64) — pixel access, rects, circles, lines, triangles, 3 gradient modes, blending, blit compositing, clone, scrolling |
+| **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact with lowercase) with measurement and centered rendering |
 | **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing |
-| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, text overlays, scoreboard, timer, buzzer |
+| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands |
 | **Image Loading** | Resize any image to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes and rasterize with scanline fill |
@@ -35,7 +35,7 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 
 ### Prerequisites
 
-- **Bun** >= 1.0
+- **Bun** >= 1.3
 - **Divoom Pixoo** (16, 32, or 64) on the same network
 
 ### Install
@@ -133,6 +133,10 @@ output/           Generated PNG previews (gitignored)
 All commands go to `POST http://<device-ip>/post` with a JSON body containing a `Command` field. The `PixooClient` class wraps this — use `client.send(command, params)` for raw access, or the typed convenience methods.
 
 ```typescript
+import { PixooClient, Channel } from '@cyanheads/pixoo-toolkit';
+
+const device = new PixooClient(process.env.PIXOO_IP!);
+
 // Raw command
 await device.send('Channel/SetBrightness', { Brightness: 80 });
 

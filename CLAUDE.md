@@ -194,7 +194,7 @@ src/
   canvas.ts     Square pixel buffer (16/32/64) + drawing primitives
   client.ts     PixooClient — HTTP device control, push frames/animations
   color.ts      RGB/HSL types, named colors, lerp, dim
-  font.ts       Bitmap fonts (FONT_5x7, FONT_3x5), drawText, measureText
+  font.ts       Bitmap fonts (FONT_5x7 full ASCII, FONT_3x5 with lowercase), drawText, measureText
   image.ts      Image loading (sharp), sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
   preview.ts    Zero-dep PNG encoder, savePng()
