@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/readme_header.png" width="256" />
+
 # @cyanheads/pixoo-toolkit
 
 **TypeScript toolkit for Divoom Pixoo displays**\
