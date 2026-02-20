@@ -273,6 +273,7 @@ All scripts: `bun run build && bun dist/scripts/<name>.js`
 
 ## Conventions
 
+- **CHANGELOG**: Never use `[Unreleased]` as a version header. Always assign a concrete version number and date.
 - All device communication is `POST http://<device-ip>/post` with JSON body
 - Check `error_code === 0` for success
 - Pixel data is `size × size` (16, 32, or 64), RGB, row-major, base64-encoded
