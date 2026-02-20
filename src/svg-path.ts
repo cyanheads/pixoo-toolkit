@@ -258,10 +258,10 @@ export function renderSvgPath(
   d: string,
   color: ColorLike,
   svgViewBox: [number, number] = [16, 16],
-  targetRect: [number, number, number, number] = [0, 0, 64, 64],
+  targetRect?: [number, number, number, number],
 ): void {
   const points = parseSvgPath(d);
-  const [tx, ty, tw, th] = targetRect;
+  const [tx, ty, tw, th] = targetRect ?? [0, 0, canvas.width, canvas.height];
   const [vw, vh] = svgViewBox;
   if (vw === 0 || vh === 0) return;
 

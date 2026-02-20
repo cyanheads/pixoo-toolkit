@@ -1,9 +1,9 @@
 import sharp from 'sharp';
-import { Canvas, DISPLAY_SIZE } from './canvas.js';
+import { Canvas, type PixooSize } from './canvas.js';
 import { type RGB } from './color.js';
 
 /**
- * Load an image file and render it onto a 64×64 Canvas.
+ * Load an image file and render it onto a Canvas.
  *
  * Resizes using nearest-neighbor (sharp) to preserve pixel-art crispness.
  * Transparent pixels are left as-is (black by default, or whatever the canvas already has).
@@ -11,9 +11,11 @@ import { type RGB } from './color.js';
 export async function loadImage(
   path: string,
   opts: {
-    /** Target width on the canvas (default: 64). */
+    /** Canvas size when creating a new canvas (default: 64). Ignored if `canvas` is provided. */
+    size?: PixooSize;
+    /** Target width on the canvas (default: canvas width). */
     width?: number;
-    /** Target height on the canvas (default: 64). */
+    /** Target height on the canvas (default: canvas height). */
     height?: number;
     /** X offset on the canvas (default: 0). */
     x?: number;
@@ -27,13 +29,13 @@ export async function loadImage(
     canvas?: Canvas;
   } = {},
 ): Promise<Canvas> {
-  const targetW = opts.width ?? DISPLAY_SIZE;
-  const targetH = opts.height ?? DISPLAY_SIZE;
+  const canvas = opts.canvas ?? new Canvas(opts.size);
+  const targetW = opts.width ?? canvas.width;
+  const targetH = opts.height ?? canvas.height;
   const ox = opts.x ?? 0;
   const oy = opts.y ?? 0;
   const fit = opts.fit ?? 'contain';
   const kernel = opts.kernel ?? 'nearest';
-  const canvas = opts.canvas ?? new Canvas();
 
   const resized = await sharp(path)
     .resize(targetW, targetH, {
@@ -253,8 +255,8 @@ export function renderSprite(
 ): void {
   const rows = grid.length;
   const cols = grid[0]?.length ?? 0;
-  const scale = opts.scale ?? Math.floor(DISPLAY_SIZE / Math.max(cols, rows));
-  const ox = opts.x ?? Math.floor((DISPLAY_SIZE - cols * scale) / 2);
+  const scale = opts.scale ?? Math.floor(canvas.width / Math.max(cols, rows));
+  const ox = opts.x ?? Math.floor((canvas.width - cols * scale) / 2);
   const oy = opts.y ?? 0;
 
   for (let gy = 0; gy < rows; gy++) {

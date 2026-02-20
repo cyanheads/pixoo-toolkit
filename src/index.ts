@@ -1,5 +1,5 @@
 // Core
-export { Canvas, DISPLAY_SIZE } from './canvas.js';
+export { Canvas, type PixooSize, DEFAULT_SIZE } from './canvas.js';
 export {
   type RGB,
   type HSL,

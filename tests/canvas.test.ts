@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Canvas, DISPLAY_SIZE } from '../src/canvas.js';
+import { Canvas, DEFAULT_SIZE } from '../src/canvas.js';
 
 describe('Canvas construction', () => {
   it('creates a 64x64 canvas', () => {
@@ -33,7 +33,36 @@ describe('Canvas construction', () => {
   });
 
   it('throws on wrong buffer size', () => {
-    expect(() => new Canvas(new Uint8Array(100))).toThrow('12288');
+    expect(() => new Canvas(new Uint8Array(100))).toThrow('Invalid buffer length');
+  });
+
+  it('creates a 16x16 canvas', () => {
+    const c = new Canvas(16);
+    expect(c.width).toBe(16);
+    expect(c.height).toBe(16);
+    expect(c.buffer.length).toBe(16 * 16 * 3);
+  });
+
+  it('creates a 32x32 canvas', () => {
+    const c = new Canvas(32);
+    expect(c.width).toBe(32);
+    expect(c.height).toBe(32);
+    expect(c.buffer.length).toBe(32 * 32 * 3);
+  });
+
+  it('creates a 64x64 canvas with explicit size', () => {
+    const c = new Canvas(64);
+    expect(c.width).toBe(64);
+    expect(c.buffer.length).toBe(64 * 64 * 3);
+  });
+
+  it('infers size from buffer length', () => {
+    const buf32 = new Uint8Array(32 * 32 * 3);
+    buf32[0] = 42;
+    const c = new Canvas(buf32);
+    expect(c.width).toBe(32);
+    expect(c.height).toBe(32);
+    expect(c.getPixel(0, 0)).toEqual([42, 0, 0]);
   });
 });
 
@@ -411,8 +440,57 @@ describe('toBase64', () => {
   });
 });
 
-describe('DISPLAY_SIZE', () => {
+describe('DEFAULT_SIZE', () => {
   it('is 64', () => {
-    expect(DISPLAY_SIZE).toBe(64);
+    expect(DEFAULT_SIZE).toBe(64);
+  });
+});
+
+describe('Canvas with different sizes', () => {
+  it('clone preserves size', () => {
+    const c = new Canvas(32);
+    c.setPixel(5, 5, [255, 0, 0]);
+    const clone = c.clone();
+    expect(clone.width).toBe(32);
+    expect(clone.height).toBe(32);
+    expect(clone.getPixel(5, 5)).toEqual([255, 0, 0]);
+  });
+
+  it('drawing works on 16x16 canvas', () => {
+    const c = new Canvas(16);
+    c.fillRect(0, 0, 8, 8, [255, 0, 0]);
+    expect(c.getPixel(0, 0)).toEqual([255, 0, 0]);
+    expect(c.getPixel(7, 7)).toEqual([255, 0, 0]);
+    expect(c.getPixel(8, 8)).toEqual([0, 0, 0]);
+  });
+
+  it('bounds checking respects canvas size', () => {
+    const c = new Canvas(16);
+    c.setPixel(15, 15, [255, 0, 0]);
+    c.setPixel(16, 0, [0, 255, 0]); // out of bounds
+    expect(c.getPixel(15, 15)).toEqual([255, 0, 0]);
+    expect(c.getPixel(16, 0)).toEqual([0, 0, 0]);
+  });
+
+  it('blit works between different-sized canvases', () => {
+    const src = new Canvas(16);
+    src.setPixel(0, 0, [255, 0, 0]);
+
+    const dst = new Canvas(32);
+    dst.blit(src, 10, 10);
+    expect(dst.getPixel(10, 10)).toEqual([255, 0, 0]);
+  });
+
+  it('gradientV works on 32x32 canvas', () => {
+    const c = new Canvas(32);
+    c.gradientV([255, 0, 0], [0, 0, 255]);
+    expect(c.getPixel(0, 0)).toEqual([255, 0, 0]);
+    expect(c.getPixel(0, 31)).toEqual([0, 0, 255]);
+  });
+
+  it('toBase64 encodes correct buffer size', () => {
+    const c = new Canvas(16);
+    const decoded = Buffer.from(c.toBase64(), 'base64');
+    expect(decoded.length).toBe(16 * 16 * 3);
   });
 });

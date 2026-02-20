@@ -1,26 +1,45 @@
 import { type RGB, type ColorLike, resolveColor, lerpColor } from './color.js';
 
-export const DISPLAY_SIZE = 64;
-const PIXEL_COUNT = DISPLAY_SIZE * DISPLAY_SIZE;
-const BUFFER_SIZE = PIXEL_COUNT * 3;
+/** Supported Pixoo display sizes. */
+export type PixooSize = 16 | 32 | 64;
+
+/** Default display size (Pixoo-64). */
+export const DEFAULT_SIZE: PixooSize = 64;
+
+const VALID_BUFFER_SIZES = new Map<number, PixooSize>([
+  [16 * 16 * 3, 16],
+  [32 * 32 * 3, 32],
+  [64 * 64 * 3, 64],
+]);
 
 /**
- * 64×64 RGB pixel buffer with drawing primitives.
+ * Square RGB pixel buffer with drawing primitives.
  *
- * Coordinates: (0,0) = top-left, (63,63) = bottom-right.
+ * Coordinates: (0,0) = top-left, (size-1, size-1) = bottom-right.
  * All drawing methods mutate in-place and return `this` for chaining.
  */
 export class Canvas {
-  /** Raw RGB byte buffer — 64×64×3 = 12,288 bytes. */
+  /** Raw RGB byte buffer — width × height × 3 bytes. */
   readonly buffer: Uint8Array;
-  readonly width = DISPLAY_SIZE;
-  readonly height = DISPLAY_SIZE;
+  readonly width: number;
+  readonly height: number;
 
-  constructor(source?: Uint8Array) {
-    if (source && source.length !== BUFFER_SIZE) {
-      throw new Error(`Canvas buffer must be exactly ${BUFFER_SIZE} bytes, got ${source.length}`);
+  constructor(sizeOrSource?: PixooSize | Uint8Array) {
+    if (sizeOrSource instanceof Uint8Array) {
+      const size = VALID_BUFFER_SIZES.get(sizeOrSource.length);
+      if (!size) {
+        const valid = [...VALID_BUFFER_SIZES.keys()].join(', ');
+        throw new Error(`Invalid buffer length ${sizeOrSource.length}; expected one of: ${valid}`);
+      }
+      this.width = size;
+      this.height = size;
+      this.buffer = new Uint8Array(sizeOrSource);
+    } else {
+      const size = sizeOrSource ?? DEFAULT_SIZE;
+      this.width = size;
+      this.height = size;
+      this.buffer = new Uint8Array(size * size * 3);
     }
-    this.buffer = source ? new Uint8Array(source) : new Uint8Array(BUFFER_SIZE);
   }
 
   /** Clone this canvas into a new instance. */
@@ -31,11 +50,11 @@ export class Canvas {
   // --- Pixel access ---
 
   private idx(x: number, y: number): number {
-    return (y * DISPLAY_SIZE + x) * 3;
+    return (y * this.width + x) * 3;
   }
 
   private inBounds(x: number, y: number): boolean {
-    return x >= 0 && x < DISPLAY_SIZE && y >= 0 && y < DISPLAY_SIZE;
+    return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }
 
   /** Set a single pixel. Out-of-bounds calls are silently ignored. */
@@ -68,7 +87,7 @@ export class Canvas {
     if (r === 0 && g === 0 && b === 0) {
       this.buffer.fill(0);
     } else {
-      for (let i = 0; i < BUFFER_SIZE; i += 3) {
+      for (let i = 0; i < this.buffer.length; i += 3) {
         this.buffer[i] = r;
         this.buffer[i + 1] = g;
         this.buffer[i + 2] = b;
@@ -82,8 +101,8 @@ export class Canvas {
     const [r, g, b] = resolveColor(color);
     const x0 = Math.max(0, Math.floor(x));
     const y0 = Math.max(0, Math.floor(y));
-    const x1 = Math.min(DISPLAY_SIZE, Math.floor(x + w));
-    const y1 = Math.min(DISPLAY_SIZE, Math.floor(y + h));
+    const x1 = Math.min(this.width, Math.floor(x + w));
+    const y1 = Math.min(this.height, Math.floor(y + h));
     for (let py = y0; py < y1; py++) {
       for (let px = x0; px < x1; px++) {
         const i = this.idx(px, py);
@@ -101,8 +120,8 @@ export class Canvas {
     const r2 = radius * radius;
     const x0 = Math.max(0, Math.floor(cx - radius));
     const y0 = Math.max(0, Math.floor(cy - radius));
-    const x1 = Math.min(DISPLAY_SIZE - 1, Math.ceil(cx + radius));
-    const y1 = Math.min(DISPLAY_SIZE - 1, Math.ceil(cy + radius));
+    const x1 = Math.min(this.width - 1, Math.ceil(cx + radius));
+    const y1 = Math.min(this.height - 1, Math.ceil(cy + radius));
     for (let py = y0; py <= y1; py++) {
       for (let px = x0; px <= x1; px++) {
         const dx = px - cx,
@@ -189,9 +208,9 @@ export class Canvas {
   drawLineH(x: number, y: number, length: number, color: ColorLike): this {
     const [r, g, b] = resolveColor(color);
     const iy = Math.floor(y);
-    if (iy < 0 || iy >= DISPLAY_SIZE) return this;
+    if (iy < 0 || iy >= this.height) return this;
     const x0 = Math.max(0, Math.floor(x));
-    const x1 = Math.min(DISPLAY_SIZE, Math.floor(x + length));
+    const x1 = Math.min(this.width, Math.floor(x + length));
     for (let px = x0; px < x1; px++) {
       const i = this.idx(px, iy);
       this.buffer[i] = r;
@@ -205,9 +224,9 @@ export class Canvas {
   drawLineV(x: number, y: number, length: number, color: ColorLike): this {
     const [r, g, b] = resolveColor(color);
     const ix = Math.floor(x);
-    if (ix < 0 || ix >= DISPLAY_SIZE) return this;
+    if (ix < 0 || ix >= this.width) return this;
     const y0 = Math.max(0, Math.floor(y));
-    const y1 = Math.min(DISPLAY_SIZE, Math.floor(y + length));
+    const y1 = Math.min(this.height, Math.floor(y + length));
     for (let py = y0; py < y1; py++) {
       const i = this.idx(ix, py);
       this.buffer[i] = r;
@@ -244,6 +263,8 @@ export class Canvas {
     color: ColorLike,
   ): this {
     const [r, g, b] = resolveColor(color);
+    const w = this.width;
+    const h = this.height;
     // Sort vertices by y-coordinate ascending
     let ax = x0,
       ay = y0,
@@ -268,12 +289,12 @@ export class Canvas {
       xRight: (y: number) => number,
     ) => {
       const yStart = Math.max(0, Math.ceil(ya));
-      const yEnd = Math.min(DISPLAY_SIZE - 1, Math.floor(yb));
+      const yEnd = Math.min(h - 1, Math.floor(yb));
       for (let y = yStart; y <= yEnd; y++) {
         const xl = Math.max(0, Math.ceil(xLeft(y)));
-        const xr = Math.min(DISPLAY_SIZE - 1, Math.floor(xRight(y)));
+        const xr = Math.min(w - 1, Math.floor(xRight(y)));
         for (let x = xl; x <= xr; x++) {
-          const i = (y * DISPLAY_SIZE + x) * 3;
+          const i = (y * w + x) * 3;
           this.buffer[i] = r;
           this.buffer[i + 1] = g;
           this.buffer[i + 2] = b;
@@ -284,7 +305,7 @@ export class Canvas {
     const lerp = (y: number, ya: number, xa: number, yb: number, xb: number) =>
       ya === yb ? xa : xa + ((y - ya) / (yb - ya)) * (xb - xa);
 
-    // Upper half: ay → by
+    // Upper half: ay -> by
     if (by > ay) {
       scanline(
         ay,
@@ -301,7 +322,7 @@ export class Canvas {
         },
       );
     }
-    // Lower half: by → cy
+    // Lower half: by -> cy
     if (cy > by) {
       scanline(
         by,
@@ -323,7 +344,7 @@ export class Canvas {
 
   // --- Compositing ---
 
-  /** Alpha-blend a color onto a pixel. alpha: 0–1. */
+  /** Alpha-blend a color onto a pixel. alpha: 0-1. */
   blendPixel(x: number, y: number, color: ColorLike, alpha: number): this {
     if (alpha <= 0) return this;
     if (alpha >= 1) return this.setPixel(x, y, color);
@@ -344,17 +365,17 @@ export class Canvas {
     const dst = this.buffer;
     // Clamp iteration to the overlapping region
     const syStart = Math.max(0, -dy);
-    const syEnd = Math.min(source.height, DISPLAY_SIZE - dy);
+    const syEnd = Math.min(source.height, this.height - dy);
     const sxStart = Math.max(0, -dx);
-    const sxEnd = Math.min(source.width, DISPLAY_SIZE - dx);
+    const sxEnd = Math.min(source.width, this.width - dx);
     for (let sy = syStart; sy < syEnd; sy++) {
       for (let sx = sxStart; sx < sxEnd; sx++) {
-        const si = (sy * DISPLAY_SIZE + sx) * 3;
+        const si = (sy * source.width + sx) * 3;
         const r = src[si]!;
         const g = src[si + 1]!;
         const b = src[si + 2]!;
         if (skip && r === skip[0] && g === skip[1] && b === skip[2]) continue;
-        const di = ((dy + sy) * DISPLAY_SIZE + (dx + sx)) * 3;
+        const di = ((dy + sy) * this.width + (dx + sx)) * 3;
         dst[di] = r;
         dst[di + 1] = g;
         dst[di + 2] = b;
@@ -369,10 +390,10 @@ export class Canvas {
   gradientV(topColor: ColorLike, bottomColor: ColorLike): this {
     const top = resolveColor(topColor);
     const bottom = resolveColor(bottomColor);
-    for (let y = 0; y < DISPLAY_SIZE; y++) {
-      const t = y / (DISPLAY_SIZE - 1);
+    for (let y = 0; y < this.height; y++) {
+      const t = y / (this.height - 1);
       const c = lerpColor(top, bottom, t);
-      this.drawLineH(0, y, DISPLAY_SIZE, c);
+      this.drawLineH(0, y, this.width, c);
     }
     return this;
   }
@@ -381,10 +402,10 @@ export class Canvas {
   gradientH(leftColor: ColorLike, rightColor: ColorLike): this {
     const left = resolveColor(leftColor);
     const right = resolveColor(rightColor);
-    for (let x = 0; x < DISPLAY_SIZE; x++) {
-      const t = x / (DISPLAY_SIZE - 1);
+    for (let x = 0; x < this.width; x++) {
+      const t = x / (this.width - 1);
       const c = lerpColor(left, right, t);
-      this.drawLineV(x, 0, DISPLAY_SIZE, c);
+      this.drawLineV(x, 0, this.height, c);
     }
     return this;
   }
@@ -399,8 +420,8 @@ export class Canvas {
   ): this {
     const inner = resolveColor(innerColor);
     const outer = resolveColor(outerColor);
-    for (let y = 0; y < DISPLAY_SIZE; y++) {
-      for (let x = 0; x < DISPLAY_SIZE; x++) {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
         const dx = x - cx,
           dy = y - cy;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -418,13 +439,13 @@ export class Canvas {
   scroll(dx: number, dy: number): this {
     const copy = new Uint8Array(this.buffer);
     this.clear();
-    for (let y = 0; y < DISPLAY_SIZE; y++) {
-      for (let x = 0; x < DISPLAY_SIZE; x++) {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
         const nx = x + dx,
           ny = y + dy;
         if (this.inBounds(nx, ny)) {
-          const si = (y * DISPLAY_SIZE + x) * 3;
-          const di = (ny * DISPLAY_SIZE + nx) * 3;
+          const si = (y * this.width + x) * 3;
+          const di = (ny * this.width + nx) * 3;
           this.buffer[di] = copy[si]!;
           this.buffer[di + 1] = copy[si + 1]!;
           this.buffer[di + 2] = copy[si + 2]!;

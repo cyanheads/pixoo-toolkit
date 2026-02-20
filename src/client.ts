@@ -1,4 +1,4 @@
-import { Canvas } from './canvas.js';
+import { Canvas, type PixooSize, DEFAULT_SIZE } from './canvas.js';
 import { type ColorLike, resolveColor, rgbToHex } from './color.js';
 
 /** Response from the Pixoo device. */
@@ -33,6 +33,8 @@ export enum Channel {
 }
 
 export interface PixooClientOptions {
+  /** Display size in pixels (default: 64). Determines PicWidth for draw commands and default text width. */
+  size?: PixooSize;
   /** Request timeout in ms (default: 5000). */
   timeout?: number;
   /** Number of retry attempts on transient failures (default: 1). */
@@ -42,12 +44,13 @@ export interface PixooClientOptions {
 }
 
 /**
- * HTTP client for a Divoom Pixoo-64 device.
+ * HTTP client for a Divoom Pixoo device.
  *
  * All commands go through `POST http://<ip>/post` with JSON bodies.
  */
 export class PixooClient {
   readonly url: string;
+  readonly size: PixooSize;
   private readonly timeout: number;
   private readonly retries: number;
   private readonly retryDelay: number;
@@ -58,6 +61,7 @@ export class PixooClient {
     opts: PixooClientOptions = {},
   ) {
     this.url = `http://${ip}/post`;
+    this.size = opts.size ?? DEFAULT_SIZE;
     this.timeout = opts.timeout ?? 5000;
     this.retries = opts.retries ?? 1;
     this.retryDelay = opts.retryDelay ?? 250;
@@ -121,7 +125,7 @@ export class PixooClient {
     this.picId = (this.picId + 1) % 10000;
     return this.send('Draw/SendHttpGif', {
       PicNum: 1,
-      PicWidth: 64,
+      PicWidth: canvas.width,
       PicOffset: 0,
       PicID: this.picId,
       PicSpeed: speed,
@@ -144,7 +148,7 @@ export class PixooClient {
     for (let i = 0; i < frames.length; i++) {
       lastResponse = await this.send('Draw/SendHttpGif', {
         PicNum: frames.length,
-        PicWidth: 64,
+        PicWidth: frames[0]!.width,
         PicOffset: i,
         PicID: this.picId,
         PicSpeed: speed,
@@ -209,7 +213,7 @@ export class PixooClient {
       y: opts.y,
       dir: opts.dir ?? 0,
       font: opts.font ?? 0,
-      TextWidth: opts.width ?? 64,
+      TextWidth: opts.width ?? this.size,
       TextString: opts.text,
       speed: opts.speed ?? 0,
       color: colorStr,

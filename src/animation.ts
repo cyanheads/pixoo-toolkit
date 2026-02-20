@@ -1,4 +1,4 @@
-import { Canvas } from './canvas.js';
+import { Canvas, type PixooSize } from './canvas.js';
 
 /**
  * Multi-frame animation builder.
@@ -9,18 +9,21 @@ import { Canvas } from './canvas.js';
 export class Animation {
   readonly frames: Canvas[];
   readonly speed: number;
+  readonly size: PixooSize | undefined;
 
   /**
    * @param frameCount - Number of frames to pre-allocate.
    * @param speed - Milliseconds per frame (default: 100).
+   * @param size - Canvas size per frame (default: 64).
    */
-  constructor(frameCount: number, speed = 100) {
+  constructor(frameCount: number, speed = 100, size?: PixooSize) {
     if (frameCount <= 0) throw new RangeError('frameCount must be positive');
     if (frameCount > 40) {
-      console.warn(`Animation has ${frameCount} frames; Pixoo-64 may become unstable above 40`);
+      console.warn(`Animation has ${frameCount} frames; Pixoo may become unstable above 40`);
     }
-    this.frames = Array.from({ length: frameCount }, () => new Canvas());
+    this.frames = Array.from({ length: frameCount }, () => new Canvas(size));
     this.speed = speed;
+    this.size = size;
   }
 
   /** Get a specific frame canvas for drawing. */
@@ -48,7 +51,7 @@ export class Animation {
 
   /** Add a new frame at the end, returns the new canvas. */
   addFrame(): Canvas {
-    const frame = new Canvas();
+    const frame = new Canvas(this.size);
     this.frames.push(frame);
     return frame;
   }
@@ -70,6 +73,7 @@ export function buildAnimation(
   frameCount: number,
   speed: number,
   fn: (canvas: Canvas, frameIndex: number, totalFrames: number) => void,
+  size?: PixooSize,
 ): Animation {
-  return new Animation(frameCount, speed).render(fn);
+  return new Animation(frameCount, speed, size).render(fn);
 }
