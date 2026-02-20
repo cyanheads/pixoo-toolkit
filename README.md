@@ -38,26 +38,24 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 - **Bun** >= 1.0
 - **Divoom Pixoo** (16, 32, or 64) on the same network
 
-### Installation
+### Install
 
 ```bash
-bun install
+# npm
+npm install @cyanheads/pixoo-toolkit
+
+# bun
+bun add @cyanheads/pixoo-toolkit
 ```
 
-### Build & Run
+### Local Development
 
 ```bash
-# Build
+git clone https://github.com/cyanheads/pixoo-toolkit.git
+cd pixoo-toolkit
+bun install
 bun run build
-
-# Run tests
 bun run test
-
-# Run a script
-bun dist/scripts/hello-claude.js
-
-# Run the demo
-bun run demo
 ```
 
 > **Tip:** Set `PIXOO_IP` to your device's local IP address. Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
