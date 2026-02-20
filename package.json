@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/pixoo-toolkit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "TypeScript toolkit for Divoom Pixoo displays — pixel rendering, animations, and device control",
   "license": "Apache-2.0",
   "author": "Casey Hand (cyanheads)",

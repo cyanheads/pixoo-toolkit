@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-02-20
+
+### Added
+
+- `scripts/font-test.ts` — visual test for both bitmap fonts (FONT_5x7 and FONT_3x5) with mixed-case rendering.
+- `assets/readme_header.png` — pixel-art header image for README.
+- `assets/hello_from_claude.png` — screenshot of hello-claude script output.
+- README header image displayed at top of README.
+
+### Changed
+
+- `scripts/demo.ts` rewritten as README header generator — renders a space-themed 64×64 canvas with glowing orbs, rainbow gradient bar, geometric accents, and toolkit title text.
+
 ## [0.3.0] — 2026-02-20
 
 ### Added

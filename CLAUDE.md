@@ -266,8 +266,9 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 |---|---|---|
 | `hello-claude.ts` | Static frame: Clawd sprite + "Hello from Claude" text | `bun dist/scripts/hello-claude.js` |
 | `hello-claude-animated.ts` | 20-frame animation: bouncing/winking Clawd + text | `bun dist/scripts/hello-claude-animated.js` |
-| `demo.ts` | Full toolkit exercise: shapes, gradients, text, animation | `bun dist/scripts/demo.js` |
+| `demo.ts` | README header generator: space-themed canvas with orbs, gradients, text | `bun dist/scripts/demo.js` |
 | `color-test.ts` | 4×4 color calibration chart (16 named swatches) | `bun dist/scripts/color-test.js` |
+| `font-test.ts` | Visual test for FONT_5x7 and FONT_3x5 with mixed-case rendering | `bun dist/scripts/font-test.js` |
 
 All scripts: `bun run build && bun dist/scripts/<name>.js`
 
