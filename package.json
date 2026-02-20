@@ -1,7 +1,7 @@
 {
   "name": "@cyanheads/pixoo-toolkit",
-  "version": "0.1.5",
-  "description": "TypeScript toolkit for Divoom Pixoo-64 — pixel rendering, animations, and device control",
+  "version": "0.2.0",
+  "description": "TypeScript toolkit for Divoom Pixoo displays — pixel rendering, animations, and device control",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -20,6 +20,9 @@
     "lint": "eslint src/ scripts/ tests/",
     "format": "prettier --write src/ scripts/ tests/",
     "format:check": "prettier --check src/ scripts/ tests/"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist/src"

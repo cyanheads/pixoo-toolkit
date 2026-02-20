@@ -3,3 +3,4 @@ dist/
 output/
 *.tsbuildinfo
 .DS_Store
+.env
