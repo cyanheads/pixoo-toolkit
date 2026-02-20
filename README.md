@@ -1,6 +1,6 @@
 <div align="center">
 
-# @cyanheads/pixoo
+# @cyanheads/pixoo-toolkit
 
 **TypeScript toolkit for the Divoom Pixoo-64**\
 Pixel rendering, animations, and device control over the local HTTP API.
@@ -66,7 +66,7 @@ bun run demo
 ### Quick Example
 
 ```typescript
-import { PixooClient, Canvas, Color, drawTextCentered, FONT_5x7, savePng } from '@cyanheads/pixoo';
+import { PixooClient, Canvas, Color, drawTextCentered, FONT_5x7, savePng } from '@cyanheads/pixoo-toolkit';
 
 const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
 const canvas = new Canvas();
@@ -81,7 +81,7 @@ await device.push(canvas);
 ### Animation
 
 ```typescript
-import { PixooClient, buildAnimation, drawTextCentered, hslToRgb, Color, FONT_5x7 } from '@cyanheads/pixoo';
+import { PixooClient, buildAnimation, drawTextCentered, hslToRgb, Color, FONT_5x7 } from '@cyanheads/pixoo-toolkit';
 
 const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
 const anim = buildAnimation(20, 120, (frame, i, total) => {
@@ -97,7 +97,7 @@ await device.pushAnimation(anim.frames, anim.speed);
 ### Loading Images
 
 ```typescript
-import { loadImage, downsampleSprite, renderSprite, Canvas, savePng } from '@cyanheads/pixoo';
+import { loadImage, downsampleSprite, renderSprite, Canvas, savePng } from '@cyanheads/pixoo-toolkit';
 
 // Full-resolution resize to 64×64
 const canvas = await loadImage('assets/photo.png');
@@ -122,6 +122,7 @@ src/
   preview.ts      Zero-dep PNG encoder
   svg-path.ts     SVG path parser + polygon rasterizer
   index.ts        Barrel export
+tests/            Vitest tests (one per src module)
 scripts/          Runnable display scripts
 assets/           Source images (PNGs) for sprites
 output/           Generated PNG previews (gitignored)
