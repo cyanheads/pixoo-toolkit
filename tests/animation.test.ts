@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Animation, buildAnimation } from './animation.js';
-import { Canvas } from './canvas.js';
+import { Animation, buildAnimation } from '../src/animation.js';
+import { Canvas } from '../src/canvas.js';
 
 describe('Animation construction', () => {
   it('creates the specified number of frames', () => {

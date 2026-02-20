@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseSvgPath, fillPolygon, renderSvgPath, type Point } from './svg-path.js';
-import { Canvas } from './canvas.js';
+import { parseSvgPath, fillPolygon, renderSvgPath, type Point } from '../src/svg-path.js';
+import { Canvas } from '../src/canvas.js';
 
 describe('parseSvgPath', () => {
   it('parses absolute MoveTo', () => {

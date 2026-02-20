@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { canvasToPng } from './preview.js';
-import { Canvas } from './canvas.js';
+import { canvasToPng } from '../src/preview.js';
+import { Canvas } from '../src/canvas.js';
 
 describe('canvasToPng', () => {
   it('produces valid PNG signature', () => {

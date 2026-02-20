@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PixooClient, Channel, type PixooResponse } from './client.js';
-import { Canvas } from './canvas.js';
+import { PixooClient, Channel, type PixooResponse } from '../src/client.js';
+import { Canvas } from '../src/canvas.js';
 
 const TEST_IP = '192.168.1.100';
 

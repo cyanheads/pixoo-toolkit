@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Canvas, DISPLAY_SIZE } from './canvas.js';
+import { Canvas, DISPLAY_SIZE } from '../src/canvas.js';
 
 describe('Canvas construction', () => {
   it('creates a 64x64 canvas', () => {

@@ -11,7 +11,7 @@ import {
   NAMED_COLORS,
   Color,
   type RGB,
-} from './color.js';
+} from '../src/color.js';
 
 describe('hslToRgb', () => {
   it('converts pure red', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { renderSprite, type SpriteCell } from './image.js';
-import { Canvas } from './canvas.js';
-import type { RGB } from './color.js';
+import { renderSprite, type SpriteCell } from '../src/image.js';
+import { Canvas } from '../src/canvas.js';
+import type { RGB } from '../src/color.js';
 
 function makeGrid(rows: number, cols: number, fill: RGB | null = null): SpriteCell[][] {
   return Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ color: fill })));

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { FONT_5x7, FONT_3x5, measureText, drawText, drawTextCentered } from './font.js';
-import { Canvas } from './canvas.js';
+import { FONT_5x7, FONT_3x5, measureText, drawText, drawTextCentered } from '../src/font.js';
+import { Canvas } from '../src/canvas.js';
 
 describe('FONT_5x7', () => {
   it('has 5px width and 7px height', () => {
