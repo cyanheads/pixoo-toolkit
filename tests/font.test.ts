@@ -41,6 +41,13 @@ describe('FONT_3x5', () => {
     }
   });
 
+  it('has lowercase a-z', () => {
+    for (let i = 97; i <= 122; i++) {
+      const ch = String.fromCharCode(i);
+      expect(FONT_3x5.glyphs[ch], `missing '${ch}'`).toBeDefined();
+    }
+  });
+
   it('each glyph has exactly 5 rows', () => {
     for (const [ch, rows] of Object.entries(FONT_3x5.glyphs)) {
       expect(rows.length, `glyph '${ch}' has wrong row count`).toBe(5);
@@ -186,29 +193,37 @@ describe('drawTextCentered', () => {
   });
 });
 
-describe('auto-uppercase for fonts without lowercase', () => {
-  it('renders lowercase as uppercase with FONT_3x5', () => {
+describe('lowercase glyphs', () => {
+  it('FONT_3x5 renders distinct lowercase glyphs', () => {
     const upper = new Canvas();
-    drawText(upper, 'ABC', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+    drawText(upper, 'A', 0, 0, [255, 0, 0], { font: FONT_3x5 });
 
     const lower = new Canvas();
-    drawText(lower, 'abc', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+    drawText(lower, 'a', 0, 0, [255, 0, 0], { font: FONT_3x5 });
 
-    expect(lower.buffer).toEqual(upper.buffer);
+    // FONT_3x5 has distinct lowercase forms
+    expect(lower.buffer).not.toEqual(upper.buffer);
   });
 
-  it('measureText returns same width for lowercase/uppercase with FONT_3x5', () => {
-    expect(measureText('abc', { font: FONT_3x5 })).toBe(measureText('ABC', { font: FONT_3x5 }));
-  });
-
-  it('does not affect FONT_5x7 which has lowercase', () => {
+  it('FONT_5x7 renders distinct lowercase glyphs', () => {
     const upper = new Canvas();
     drawText(upper, 'A', 0, 0, [255, 0, 0], { font: FONT_5x7 });
 
     const lower = new Canvas();
     drawText(lower, 'a', 0, 0, [255, 0, 0], { font: FONT_5x7 });
 
-    // Should be different since FONT_5x7 has distinct lowercase
     expect(lower.buffer).not.toEqual(upper.buffer);
+  });
+
+  it('auto-uppercases when font lacks a glyph', () => {
+    // Create a font with only uppercase A
+    const tinyFont = { width: 3, height: 3, glyphs: { A: [0b111, 0b101, 0b111] } };
+    const upper = new Canvas();
+    drawText(upper, 'A', 0, 0, [255, 0, 0], { font: tinyFont });
+
+    const lower = new Canvas();
+    drawText(lower, 'a', 0, 0, [255, 0, 0], { font: tinyFont });
+
+    expect(lower.buffer).toEqual(upper.buffer);
   });
 });

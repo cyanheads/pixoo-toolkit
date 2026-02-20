@@ -3,7 +3,7 @@
  *
  * Two built-in sizes:
  * - `FONT_5x7`: 5 wide × 7 tall, full printable ASCII (32–126)
- * - `FONT_3x5`: 3 wide × 5 tall, compact for cramped layouts
+ * - `FONT_3x5`: 3 wide × 5 tall, uppercase, lowercase, digits, basic punctuation
  *
  * Glyph data is stored as arrays of bitmask rows (one number per row).
  * For a 5-wide font, bit 4 = leftmost pixel, bit 0 = rightmost.
@@ -133,7 +133,7 @@ export const FONT_5x7: BitmapFont = {
   glyphs: GLYPHS_5x7,
 };
 
-// --- 3×5 compact font (digits, uppercase, basic punctuation) ---
+// --- 3×5 compact font (digits, uppercase, lowercase, basic punctuation) ---
 
 const GLYPHS_3x5: Record<string, readonly number[]> = {
   ' ': [0b000, 0b000, 0b000, 0b000, 0b000],
@@ -182,6 +182,34 @@ const GLYPHS_3x5: Record<string, readonly number[]> = {
   X: [0b101, 0b101, 0b010, 0b101, 0b101],
   Y: [0b101, 0b101, 0b010, 0b010, 0b010],
   Z: [0b111, 0b001, 0b010, 0b100, 0b111],
+
+  // Lowercase — ascender/descender/body forms for 3×5 grid
+  a: [0b000, 0b010, 0b101, 0b111, 0b101],
+  b: [0b100, 0b100, 0b110, 0b101, 0b110],
+  c: [0b000, 0b011, 0b100, 0b100, 0b011],
+  d: [0b001, 0b001, 0b011, 0b101, 0b011],
+  e: [0b000, 0b010, 0b101, 0b110, 0b011],
+  f: [0b011, 0b010, 0b111, 0b010, 0b010],
+  g: [0b011, 0b101, 0b011, 0b001, 0b110],
+  h: [0b100, 0b100, 0b110, 0b101, 0b101],
+  i: [0b010, 0b000, 0b010, 0b010, 0b010],
+  j: [0b010, 0b000, 0b010, 0b010, 0b100],
+  k: [0b100, 0b100, 0b101, 0b110, 0b101],
+  l: [0b110, 0b010, 0b010, 0b010, 0b011],
+  m: [0b000, 0b111, 0b111, 0b101, 0b101],
+  n: [0b000, 0b110, 0b101, 0b101, 0b101],
+  o: [0b000, 0b010, 0b101, 0b101, 0b010],
+  p: [0b110, 0b101, 0b110, 0b100, 0b100],
+  q: [0b011, 0b101, 0b011, 0b001, 0b001],
+  r: [0b000, 0b000, 0b011, 0b100, 0b100],
+  s: [0b000, 0b011, 0b100, 0b001, 0b110],
+  t: [0b010, 0b010, 0b111, 0b010, 0b001],
+  u: [0b000, 0b101, 0b101, 0b101, 0b010],
+  v: [0b000, 0b101, 0b101, 0b010, 0b010],
+  w: [0b000, 0b101, 0b101, 0b111, 0b010],
+  x: [0b000, 0b000, 0b101, 0b010, 0b101],
+  y: [0b101, 0b101, 0b011, 0b001, 0b110],
+  z: [0b000, 0b111, 0b001, 0b010, 0b111],
 };
 
 export const FONT_3x5: BitmapFont = {
