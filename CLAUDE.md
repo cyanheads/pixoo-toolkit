@@ -4,15 +4,15 @@
 
 | Property | Value |
 |---|---|
-| Model | Divoom Pixoo-64 |
-| Resolution | 64×64 RGB LED matrix |
+| Models | Divoom Pixoo-16, Pixoo-32, Pixoo-64 |
+| Resolutions | 16×16, 32×32, 64×64 RGB LED matrix |
 | Connectivity | Wi-Fi (2.4GHz), Bluetooth |
-| Local IP | `10.1.20.114` |
+| Local IP | `10.1.20.114` (configurable via `PIXOO_IP` env var) |
 | Firmware API | HTTP REST (JSON POST) |
 
 ## Goal
 
-Full programmatic control of the Pixoo64 from Claude Code. Build custom visuals, animations, dashboards, and interactive displays — bypassing the Divoom app entirely.
+Full programmatic control of Divoom Pixoo displays from Claude Code. Build custom visuals, animations, dashboards, and interactive displays — bypassing the Divoom app entirely.
 
 ## Local HTTP API
 
@@ -72,7 +72,7 @@ This is the primary way to push custom visuals to the device.
 ```
 
 **PicData encoding:**
-1. 64×64 pixels, each pixel = 3 bytes (R, G, B) = 12,288 bytes total per frame
+1. `PicWidth × PicWidth` pixels, each pixel = 3 bytes (R, G, B). For Pixoo-64: 64×64 = 12,288 bytes per frame.
 2. Pixel order: left-to-right, top-to-bottom (row-major)
 3. Base64-encode the raw byte array
 4. For animations: send multiple frames sequentially (same `PicID`, incrementing `PicOffset`)
@@ -191,7 +191,7 @@ assets/         Source images (PNGs) for sprites — drop files here
 scripts/        Reusable display scripts (hello-claude.ts, demo.ts, etc.)
 output/         Generated PNG previews — do not commit
 src/
-  canvas.ts     64×64 pixel buffer + drawing primitives
+  canvas.ts     Square pixel buffer (16/32/64) + drawing primitives
   client.ts     PixooClient — HTTP device control, push frames/animations
   color.ts      RGB/HSL types, named colors, lerp, dim
   font.ts       Bitmap fonts (FONT_5x7, FONT_3x5), drawText, measureText
@@ -205,7 +205,7 @@ tests/          Vitest tests (one per src module)
 
 Scripts go in `scripts/`, output PNGs go in `output/`, source images go in `assets/`.
 Run scripts: `bun run build && bun dist/scripts/<name>.js`
-Set `PIXOO_IP` env var to override the default device IP (`10.1.20.114`).
+Set `PIXOO_IP` env var to override the default device IP (`10.1.20.114`). Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
 
 ### Loading sprites from PNGs
 
@@ -230,7 +230,7 @@ For full-resolution images (no grid), use `loadImage`:
 ```typescript
 import { loadImage } from '../src/index.js';
 
-// Resize any image to 64×64 with nearest-neighbor (pixel-art crisp)
+// Resize any image to canvas size with nearest-neighbor (pixel-art crisp)
 const canvas = await loadImage('assets/photo.png');
 
 // Or render into a region of an existing canvas
@@ -275,7 +275,7 @@ All scripts: `bun run build && bun dist/scripts/<name>.js`
 
 - All device communication is `POST http://10.1.20.114/post` with JSON body
 - Check `error_code === 0` for success
-- Pixel data is always 64×64, RGB, row-major, base64-encoded
+- Pixel data is `size × size` (16, 32, or 64), RGB, row-major, base64-encoded
 - Use `PicID` to track animation identity; increment for new animations
 - Keep frame count under 40 for stability
 - Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug

@@ -2,8 +2,9 @@
 
 # @cyanheads/pixoo-toolkit
 
-**TypeScript toolkit for the Divoom Pixoo-64**\
-Pixel rendering, animations, and device control over the local HTTP API.
+**TypeScript toolkit for Divoom Pixoo displays**\
+Pixel rendering, animations, and device control over the local HTTP API.\
+Supports Pixoo-16, Pixoo-32, and Pixoo-64.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.0-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/)
@@ -15,16 +16,16 @@ Pixel rendering, animations, and device control over the local HTTP API.
 
 ## Overview
 
-Full programmatic control of the Pixoo-64 from TypeScript — bypassing the Divoom app entirely. Push custom visuals, animations, dashboards, and interactive displays to the 64×64 RGB LED matrix over your local network.
+Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing the Divoom app entirely. Push custom visuals, animations, dashboards, and interactive displays to the RGB LED matrix over your local network. Supports all three Pixoo sizes: 16×16, 32×32, and 64×64.
 
 ### Highlights
 
 | Module | What it does |
 |---|---|
-| **Canvas** | 64×64 RGB pixel buffer — rects, circles, lines, triangles, gradients, blending, scrolling |
+| **Canvas** | Square RGB pixel buffer (16/32/64) — rects, circles, lines, triangles, gradients, blending, scrolling |
 | **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact) with measurement and centered rendering |
 | **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing |
-| **Device Client** | Full Pixoo-64 HTTP API — frames, animations, channels, brightness, text overlays, scoreboard, timer, buzzer |
+| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, text overlays, scoreboard, timer, buzzer |
 | **Image Loading** | Resize any image to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes and rasterize with scanline fill |
@@ -35,7 +36,7 @@ Full programmatic control of the Pixoo-64 from TypeScript — bypassing the Divo
 ### Prerequisites
 
 - **Bun** >= 1.0
-- **Divoom Pixoo-64** on the same network
+- **Divoom Pixoo** (16, 32, or 64) on the same network
 
 ### Installation
 
@@ -59,7 +60,7 @@ bun dist/scripts/hello-claude.js
 bun run demo
 ```
 
-> **Tip:** Set the `PIXOO_IP` environment variable to override the default device IP (`10.1.20.114`).
+> **Tip:** Set `PIXOO_IP` to override the default device IP (`10.1.20.114`). Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
 
 ## Usage
 
@@ -68,6 +69,7 @@ bun run demo
 ```typescript
 import { PixooClient, Canvas, Color, drawTextCentered, FONT_5x7, savePng } from '@cyanheads/pixoo-toolkit';
 
+// Defaults to 64×64; pass 16 or 32 for other Pixoo models
 const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
 const canvas = new Canvas();
 
@@ -113,8 +115,8 @@ await savePng(c, 'output/sprite.png');
 
 ```
 src/
-  canvas.ts       64×64 pixel buffer + drawing primitives
-  client.ts       PixooClient — HTTP device control
+  canvas.ts       Square pixel buffer (16/32/64) + drawing primitives
+  client.ts       PixooClient — HTTP device control (all Pixoo sizes)
   color.ts        RGB/HSL types, named colors, utilities
   font.ts         Bitmap fonts, text rendering
   image.ts        Image loading (sharp), sprite downsampling

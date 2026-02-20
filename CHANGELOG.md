@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-02-20
+
+### Added
+
+- Multi-size display support: `Canvas`, `PixooClient`, `Animation`, `loadImage`, and `renderSvgPath` now support Pixoo-16 (16×16), Pixoo-32 (32×32), and Pixoo-64 (64×64).
+- `PixooSize` type (`16 | 32 | 64`) exported from barrel.
+- `PixooClientOptions.size` option to configure display size per client instance.
+- `Canvas` constructor accepts a `PixooSize` number or a `Uint8Array` buffer (size inferred from length).
+- `.env.example` with `PIXOO_IP` and `PIXOO_SIZE` configuration.
+- Tests for multi-size canvas construction, cross-size blit, gradient, clone, and bounds checking.
+- `publishConfig.access: "public"` in package.json for scoped npm publishing.
+
+### Changed
+
+- **Breaking:** `DISPLAY_SIZE` constant renamed to `DEFAULT_SIZE`.
+- **Breaking:** `Canvas` constructor signature changed from `(source?: Uint8Array)` to `(sizeOrSource?: PixooSize | Uint8Array)`.
+- All drawing primitives use instance `width`/`height` instead of hardcoded 64.
+- `PixooClient.push()` and `pushAnimation()` send `PicWidth` from canvas dimensions instead of hardcoded 64.
+- `PixooClient.sendText()` defaults `TextWidth` to `this.size` instead of 64.
+- `Animation` constructor accepts optional `size` parameter, propagated to frame canvases.
+- `buildAnimation()` accepts optional `size` parameter.
+- `loadImage()` accepts optional `size` parameter for new canvas creation.
+- `renderSvgPath()` `targetRect` defaults to canvas dimensions instead of hardcoded `[0, 0, 64, 64]`.
+- `renderSprite()` scale/offset calculations use `canvas.width` instead of `DISPLAY_SIZE`.
+- `.env` added to `.gitignore`.
+
 ## [0.1.5] — 2026-02-20
 
 ### Changed
