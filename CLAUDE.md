@@ -7,7 +7,7 @@
 | Models | Divoom Pixoo-16, Pixoo-32, Pixoo-64 |
 | Resolutions | 16×16, 32×32, 64×64 RGB LED matrix |
 | Connectivity | Wi-Fi (2.4GHz), Bluetooth |
-| Local IP | `10.1.20.114` (configurable via `PIXOO_IP` env var) |
+| Local IP | `<device-ip>` (configurable via `PIXOO_IP` env var) |
 | Firmware API | HTTP REST (JSON POST) |
 
 ## Goal
@@ -19,7 +19,7 @@ Full programmatic control of Divoom Pixoo displays from Claude Code. Build custo
 All commands go to a single endpoint via POST:
 
 ```
-POST http://10.1.20.114/post
+POST http://<device-ip>/post
 Content-Type: application/json
 ```
 
@@ -27,7 +27,7 @@ Every request body contains a `"Command"` field. Response always includes `"erro
 
 ```bash
 # Example: get device config
-curl -s -X POST http://10.1.20.114/post \
+curl -s -X POST http://<device-ip>/post \
   -H "Content-Type: application/json" \
   -d '{"Command":"Channel/GetAllConf"}'
 ```
@@ -205,7 +205,7 @@ tests/          Vitest tests (one per src module)
 
 Scripts go in `scripts/`, output PNGs go in `output/`, source images go in `assets/`.
 Run scripts: `bun run build && bun dist/scripts/<name>.js`
-Set `PIXOO_IP` env var to override the default device IP (`10.1.20.114`). Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
+Set `PIXOO_IP` env var to your device's local IP address. Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
 
 ### Loading sprites from PNGs
 
@@ -273,7 +273,7 @@ All scripts: `bun run build && bun dist/scripts/<name>.js`
 
 ## Conventions
 
-- All device communication is `POST http://10.1.20.114/post` with JSON body
+- All device communication is `POST http://<device-ip>/post` with JSON body
 - Check `error_code === 0` for success
 - Pixel data is `size × size` (16, 32, or 64), RGB, row-major, base64-encoded
 - Use `PicID` to track animation identity; increment for new animations

@@ -16,7 +16,8 @@ import {
   FONT_5x7,
 } from '../src/index.js';
 
-const DEVICE_IP = process.env.PIXOO_IP ?? '10.1.20.114';
+const DEVICE_IP = process.env.PIXOO_IP;
+if (!DEVICE_IP) throw new Error('PIXOO_IP environment variable is required');
 const device = new PixooClient(DEVICE_IP);
 
 // --- Static frame demo ---

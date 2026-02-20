@@ -15,7 +15,8 @@ import {
   type RGB,
 } from '../src/index.js';
 
-const DEVICE_IP = process.env.PIXOO_IP ?? '10.1.20.114';
+const DEVICE_IP = process.env.PIXOO_IP;
+if (!DEVICE_IP) throw new Error('PIXOO_IP environment variable is required');
 
 // 16 colors to test — good spread across hue/saturation/value
 const TEST_COLORS: Array<{ label: string; rgb: RGB }> = [

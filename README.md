@@ -60,7 +60,7 @@ bun dist/scripts/hello-claude.js
 bun run demo
 ```
 
-> **Tip:** Set `PIXOO_IP` to override the default device IP (`10.1.20.114`). Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
+> **Tip:** Set `PIXOO_IP` to your device's local IP address. Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.
 
 ## Usage
 
@@ -69,8 +69,8 @@ bun run demo
 ```typescript
 import { PixooClient, Canvas, Color, drawTextCentered, FONT_5x7, savePng } from '@cyanheads/pixoo-toolkit';
 
-// Defaults to 64×64; pass 16 or 32 for other Pixoo models
-const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
+// Set PIXOO_IP env var to your device's local IP (see .env.example)
+const device = new PixooClient(process.env.PIXOO_IP!);
 const canvas = new Canvas();
 
 canvas.gradientV([10, 5, 30], [5, 15, 40]);
@@ -85,7 +85,7 @@ await device.push(canvas);
 ```typescript
 import { PixooClient, buildAnimation, drawTextCentered, hslToRgb, Color, FONT_5x7 } from '@cyanheads/pixoo-toolkit';
 
-const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
+const device = new PixooClient(process.env.PIXOO_IP!);
 const anim = buildAnimation(20, 120, (frame, i, total) => {
   frame.clear('black');
   const color = hslToRgb([(i / total) * 360, 0.9, 0.6]);

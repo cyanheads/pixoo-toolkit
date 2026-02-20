@@ -12,7 +12,9 @@ import {
   renderSprite,
 } from '../src/index.js';
 
-const device = new PixooClient(process.env.PIXOO_IP ?? '10.1.20.114');
+const ip = process.env.PIXOO_IP;
+if (!ip) throw new Error('PIXOO_IP environment variable is required');
+const device = new PixooClient(ip);
 const canvas = new Canvas();
 
 canvas.clear([12, 8, 20]);

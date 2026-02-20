@@ -125,7 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `downsampleSprite` return type renamed `width`/`height` to `cols`/`rows` for clarity.
 - `downsampleSprite` returns an empty grid instead of crashing when the source image has no visible pixels.
 - Extracted shared `glyphWidth` helper in font module.
-- All scripts read device IP from `PIXOO_IP` environment variable with fallback to `10.1.20.114`.
+- All scripts read device IP from `PIXOO_IP` environment variable with fallback to `<device-ip>`.
 - Scripts use `NAMED_COLORS.claude` instead of hardcoded color tuples.
 - Scripts import from barrel export instead of direct internal paths.
 - Removed unused `run` script from package.json.
