@@ -43,7 +43,13 @@ export { Animation, buildAnimation } from './animation.js';
 export { loadImage, downsampleSprite, renderSprite, type SpriteCell } from './image.js';
 
 // Preview
-export { canvasToPng, savePng, saveAnimationPngs } from './preview.js';
+export {
+  canvasToPng,
+  savePng,
+  saveAnimationPngs,
+  encodeAnimationGif,
+  saveAnimationGif,
+} from './preview.js';
 
 // SVG
 export { type Point, parseSvgPath, fillPolygon, renderSvgPath } from './svg-path.js';

@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
+import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import { Canvas } from './canvas.js';
 
 /**
@@ -140,4 +141,67 @@ export async function saveAnimationPngs(
   const paths = frames.map((_, i) => `${basePath}_${String(i).padStart(3, '0')}.png`);
   await Promise.all(frames.map((frame, i) => savePng(frame, paths[i]!, scale)));
   return paths;
+}
+
+/** Convert 3-byte-per-pixel RGB to 4-byte-per-pixel RGBA (alpha = 255). */
+function rgbToRgba(rgb: Uint8Array): Uint8Array {
+  const pixelCount = rgb.length / 3;
+  const rgba = new Uint8Array(pixelCount * 4);
+  for (let i = 0; i < pixelCount; i++) {
+    const si = i * 3;
+    const di = i * 4;
+    rgba[di] = rgb[si] ?? 0;
+    rgba[di + 1] = rgb[si + 1] ?? 0;
+    rgba[di + 2] = rgb[si + 2] ?? 0;
+    rgba[di + 3] = 255;
+  }
+  return rgba;
+}
+
+/**
+ * Encode animation frames as an animated GIF buffer.
+ * @param speed - Delay between frames in milliseconds.
+ * @param scale - Nearest-neighbor upscale factor (default: 8 → 512×512).
+ * @param maxColors - Max palette colors per frame (default: 256).
+ */
+export function encodeAnimationGif(
+  frames: Canvas[],
+  speed: number,
+  scale = 8,
+  maxColors = 256,
+): Uint8Array {
+  const first = frames[0];
+  if (!first) throw new Error('encodeAnimationGif requires at least one frame');
+
+  const w = first.width * scale;
+  const h = first.height * scale;
+  const gif = GIFEncoder();
+
+  for (const frame of frames) {
+    const rgb = scale === 1 ? frame.buffer : upscale(frame.buffer, frame.width, frame.height, scale);
+    const rgba = rgbToRgba(rgb);
+    const palette = quantize(rgba, maxColors);
+    const index = applyPalette(rgba, palette);
+    gif.writeFrame(index, w, h, { palette, delay: speed });
+  }
+
+  gif.finish();
+  return gif.bytes();
+}
+
+/**
+ * Save animation frames as an animated GIF file.
+ * @param speed - Delay between frames in milliseconds.
+ * @param scale - Nearest-neighbor upscale factor (default: 8 → 512×512).
+ * @param maxColors - Max palette colors per frame (default: 256).
+ */
+export async function saveAnimationGif(
+  frames: Canvas[],
+  path: string,
+  speed: number,
+  scale = 8,
+  maxColors = 256,
+): Promise<void> {
+  const gif = encodeAnimationGif(frames, speed, scale, maxColors);
+  await writeFile(path, gif);
 }
