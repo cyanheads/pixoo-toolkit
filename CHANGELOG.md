@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-02-22
+
+### Added
+
+- Animated GIF encoding and export via `encodeAnimationGif()` (returns `Uint8Array`) and `saveAnimationGif()` (writes to disk).
+- `gifenc` dependency (`^1.0.3`) for GIF palette quantization and frame encoding.
+- `src/gifenc.d.ts` type declarations for gifenc (no shipped types).
+
 ## [0.3.2] — 2026-02-20
 
 ### Added

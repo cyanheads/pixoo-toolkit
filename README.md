@@ -29,7 +29,7 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 | **Image Loading** | Resize any image to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes and rasterize with scanline fill |
-| **PNG Export** | Zero-dependency encoder (using `node:zlib`) with nearest-neighbor upscaling |
+| **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling |
 
 ## Getting Started
 
@@ -119,7 +119,7 @@ src/
   font.ts         Bitmap fonts, text rendering
   image.ts        Image loading (sharp), sprite downsampling
   animation.ts    Multi-frame animation builder
-  preview.ts      Zero-dep PNG encoder
+  preview.ts      PNG + animated GIF encoder
   svg-path.ts     SVG path parser + polygon rasterizer
   index.ts        Barrel export
 tests/            Vitest tests (one per src module)
