@@ -178,7 +178,8 @@ export function encodeAnimationGif(
   const gif = GIFEncoder();
 
   for (const frame of frames) {
-    const rgb = scale === 1 ? frame.buffer : upscale(frame.buffer, frame.width, frame.height, scale);
+    const rgb =
+      scale === 1 ? frame.buffer : upscale(frame.buffer, frame.width, frame.height, scale);
     const rgba = rgbToRgba(rgb);
     const palette = quantize(rgba, maxColors);
     const index = applyPalette(rgba, palette);

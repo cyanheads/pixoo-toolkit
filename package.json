@@ -35,6 +35,7 @@
   },
   "scripts": {
     "build": "bun run tsc",
+    "prepublishOnly": "bun run build",
     "dev": "bun run tsc --watch",
     "demo": "bun run build && bun dist/scripts/demo.js",
     "test": "vitest run",

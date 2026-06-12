@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Animation, buildAnimation } from '../src/animation.js';
 import { Canvas } from '../src/canvas.js';
 
@@ -35,21 +35,6 @@ describe('Animation construction', () => {
   it('throws RangeError for frameCount <= 0', () => {
     expect(() => new Animation(0)).toThrow(RangeError);
     expect(() => new Animation(-1)).toThrow(RangeError);
-  });
-
-  it('warns for frameCount > 40', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    new Animation(41);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(warn.mock.calls[0]![0]).toContain('41');
-    warn.mockRestore();
-  });
-
-  it('does not warn for frameCount <= 40', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    new Animation(40);
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 });
 

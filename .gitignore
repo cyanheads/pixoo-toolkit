@@ -4,3 +4,5 @@ output/
 *.tsbuildinfo
 .DS_Store
 .env
+# bun.lock is the canonical lockfile
+package-lock.json

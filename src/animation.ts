@@ -12,15 +12,13 @@ export class Animation {
   readonly size: PixooSize | undefined;
 
   /**
-   * @param frameCount - Number of frames to pre-allocate.
+   * @param frameCount - Number of frames to pre-allocate. The device becomes
+   *   unstable above ~40 frames — keep sequences at or below that.
    * @param speed - Milliseconds per frame (default: 100).
    * @param size - Canvas size per frame (default: 64).
    */
   constructor(frameCount: number, speed = 100, size?: PixooSize) {
     if (frameCount <= 0) throw new RangeError('frameCount must be positive');
-    if (frameCount > 40) {
-      console.warn(`Animation has ${frameCount} frames; Pixoo may become unstable above 40`);
-    }
     this.frames = Array.from({ length: frameCount }, () => new Canvas(size));
     this.speed = speed;
     this.size = size;
