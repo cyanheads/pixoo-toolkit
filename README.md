@@ -22,11 +22,11 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 
 | Module | What it does |
 |---|---|
-| **Canvas** | Square RGB pixel buffer (16/32/64) — pixel access, rects, circles, lines, triangles, 3 gradient modes, blending, blit compositing, clone, scrolling |
-| **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact with lowercase) with measurement and centered rendering |
-| **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing |
-| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands |
-| **Image Loading** | Resize any image to canvas via sharp, sprite downsampling with color classification |
+| **Canvas** | Square RGBA pixel buffer (16/32/64) — alpha-aware source-over compositing, pixel access, rects, circles, lines, triangles, 3 gradient modes, clone, scrolling; exports flatten to device RGB |
+| **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact with lowercase) with tight proportional metrics, measurement, and centered rendering |
+| **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing — strict resolution (typos throw, `tryResolveColor` to probe) |
+| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success |
+| **Image Loading** | Alpha-preserving resize to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves) and rasterize with even-odd scanline fill — multi-subpath holes |
 | **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling |
@@ -75,7 +75,17 @@ canvas.gradientV([10, 5, 30], [5, 15, 40]);
 drawTextCentered(canvas, 'HELLO', 28, Color.WHITE, { font: FONT_5x7 });
 
 await savePng(canvas, 'output/hello.png');
-await device.push(canvas);
+const res = await device.push(canvas);
+if (!res.ok) console.error(`push failed — ${res.kind}: ${res.message}`);
+```
+
+### Finding Your Device
+
+No IP handy? Discover Pixoo devices on your LAN (calls Divoom's cloud discovery endpoint, so it needs internet access):
+
+```typescript
+const [found] = await PixooClient.discover();
+const device = new PixooClient(found.ip);
 ```
 
 ### Animation
@@ -132,18 +142,23 @@ output/           Generated PNG previews (gitignored)
 
 All commands go to `POST http://<device-ip>/post` with a JSON body containing a `Command` field. The `PixooClient` class wraps this — use `client.send(command, params)` for raw access, or the typed convenience methods.
 
+Every call returns a `PixooResult`: `{ ok: true, data }` or `{ ok: false, kind, message }` where `kind` is `'network' | 'timeout' | 'http' | 'device'` — narrow on `ok` to reach the data, or use `unwrap()` to throw on failure.
+
 ```typescript
-import { PixooClient, Channel } from '@cyanheads/pixoo-toolkit';
+import { PixooClient, Channel, unwrap } from '@cyanheads/pixoo-toolkit';
 
 const device = new PixooClient(process.env.PIXOO_IP!);
 
 // Raw command
-await device.send('Channel/SetBrightness', { Brightness: 80 });
+const res = await device.send('Channel/SetBrightness', { Brightness: 80 });
+if (!res.ok) throw new Error(res.message);
 
 // Typed convenience
 await device.setBrightness(80);
 await device.setChannel(Channel.Custom);
-await device.setScreen(true);
+
+// unwrap() for scripts that prefer exceptions
+const { SelectIndex } = unwrap(await device.getChannel());
 ```
 
 ## License

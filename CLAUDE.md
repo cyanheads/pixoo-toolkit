@@ -165,7 +165,7 @@ Base URL: `https://appin.divoom-gz.com/`
 
 Requires authentication (email + MD5 password → `Token` + `UserId`). Has additional features not available locally: alarms, gallery uploads, social features, discovery.
 
-Device discovery (no auth): `POST https://app.divoom-gz.com/Device/ReturnSameLANDevice`
+Device discovery (no auth): `POST https://app.divoom-gz.com/Device/ReturnSameLANDevice` — wrapped by `PixooClient.discover()`
 
 ## Current Device State (as of initial setup)
 
@@ -193,14 +193,14 @@ assets/         Source images (PNGs) for sprites — drop files here
 scripts/        Reusable display scripts (hello-claude.ts, demo.ts, etc.)
 output/         Generated PNG previews — do not commit
 src/
-  canvas.ts     Square pixel buffer (16/32/64) + drawing primitives
-  client.ts     PixooClient — HTTP device control, push frames/animations
-  color.ts      RGB/HSL types, named colors, lerp, dim
+  canvas.ts     Square RGBA pixel buffer (16/32/64) + drawing primitives; exports flatten to device RGB
+  client.ts     PixooClient — HTTP device control, PixooResult on every call, LAN discovery
+  color.ts      RGB/HSL types, named colors, lerp, dim; strict resolveColor / tryResolveColor
   font.ts       Bitmap fonts (FONT_5x7 full ASCII, FONT_3x5 with lowercase), drawText, measureText
-  image.ts      Image loading (sharp), sprite downsampling + rendering
+  image.ts      Image loading (sharp, alpha-preserving), sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
   preview.ts    Zero-dep PNG encoder, savePng()
-  svg-path.ts   SVG path parser + polygon rasterizer
+  svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer
   index.ts      Barrel export
 tests/          Vitest tests (one per src module)
 ```
@@ -278,7 +278,7 @@ All scripts: `bun run build && bun dist/scripts/<name>.js`
 
 - **CHANGELOG**: Never use `[Unreleased]` as a version header. Always assign a concrete version number and date.
 - All device communication is `POST http://<device-ip>/post` with JSON body
-- Check `error_code === 0` for success
+- Raw HTTP responses carry `error_code` (0 = success); `PixooClient` calls return a discriminated `PixooResult` — narrow on `ok`
 - Pixel data is `size × size` (16, 32, or 64), RGB, row-major, base64-encoded
 - Use `PicID` to track animation identity; increment for new animations
 - Keep frame count under 40 for stability
