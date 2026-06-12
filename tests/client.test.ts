@@ -325,6 +325,25 @@ describe('PixooClient.push', () => {
     expect(typeof gifCmd['PicData']).toBe('string');
     expect(typeof gifCmd['PicID']).toBe('number');
   });
+
+  it('returns the reset failure without sending the frame', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+      const body = JSON.parse(opts.body) as Record<string, unknown>;
+      bodies.push(body);
+      const errorCode = body['Command'] === 'Draw/ResetHttpGifId' ? 5 : 0;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ error_code: errorCode }),
+      });
+    });
+
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+    const res = await client.push(new Canvas());
+    expect(res.error_code).toBe(5);
+    expect(bodies).toHaveLength(1); // no SendHttpGif after a failed reset
+  });
 });
 
 describe('PixooClient.pushAnimation', () => {
@@ -369,6 +388,25 @@ describe('PixooClient.pushAnimation', () => {
       expect(bodies[i]!['PicOffset']).toBe(i - 1);
       expect(bodies[i]!['PicSpeed']).toBe(80);
     }
+  });
+
+  it('returns the reset failure without sending any frames', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+      const body = JSON.parse(opts.body) as Record<string, unknown>;
+      bodies.push(body);
+      const errorCode = body['Command'] === 'Draw/ResetHttpGifId' ? 5 : 0;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ error_code: errorCode }),
+      });
+    });
+
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+    const res = await client.pushAnimation([new Canvas(), new Canvas()]);
+    expect(res.error_code).toBe(5);
+    expect(bodies).toHaveLength(1);
   });
 
   it('stops and resets on frame error', async () => {

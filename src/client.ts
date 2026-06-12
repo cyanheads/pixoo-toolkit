@@ -7,22 +7,28 @@ export interface PixooResponse {
   [key: string]: unknown;
 }
 
-/** Device configuration returned by Channel/GetAllConf. */
+/**
+ * Device configuration returned by Channel/GetAllConf.
+ *
+ * All fields are optional — the response set varies by firmware (a current
+ * Pixoo-64 omits `SelectIndex`, for example). For the current channel, use
+ * `getChannel()` (Channel/GetIndex), which returns `SelectIndex` reliably.
+ */
 export interface DeviceConfig {
-  Brightness: number;
-  RotationFlag: number;
-  ClockTime: number;
-  GalleryTime: number;
-  SingleGalleyTime: number;
-  PowerOnChannelId: number;
-  GalleryShowTimeFlag: number;
-  CurClockId: number;
-  Time24Flag: number;
-  TemperatureMode: number;
-  GyrateAngle: number;
-  MirrorFlag: number;
-  LightSwitch: number;
-  SelectIndex: number;
+  Brightness?: number;
+  RotationFlag?: number;
+  ClockTime?: number;
+  GalleryTime?: number;
+  SingleGalleyTime?: number;
+  PowerOnChannelId?: number;
+  GalleryShowTimeFlag?: number;
+  CurClockId?: number;
+  Time24Flag?: number;
+  TemperatureMode?: number;
+  GyrateAngle?: number;
+  MirrorFlag?: number;
+  LightSwitch?: number;
+  SelectIndex?: number;
 }
 
 export enum Channel {
@@ -121,7 +127,9 @@ export class PixooClient {
 
   /** Push a single canvas frame to the display. */
   async push(canvas: Canvas, speed = 100): Promise<PixooResponse> {
-    await this.resetGifId();
+    // A failed reset means the device will silently ignore the frame — surface it
+    const reset = await this.resetGifId();
+    if (reset.error_code !== 0) return reset;
     this.picId = (this.picId + 1) % 10000;
     return this.send('Draw/SendHttpGif', {
       PicNum: 1,
@@ -142,7 +150,8 @@ export class PixooClient {
     if (frames.length === 0) {
       return { error_code: -1, message: 'No frames provided' };
     }
-    await this.resetGifId();
+    const reset = await this.resetGifId();
+    if (reset.error_code !== 0) return reset;
     this.picId = (this.picId + 1) % 10000;
     let lastResponse: PixooResponse = { error_code: -1 };
     for (let i = 0; i < frames.length; i++) {

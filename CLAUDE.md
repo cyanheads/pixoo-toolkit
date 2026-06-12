@@ -47,6 +47,8 @@ curl -s -X POST http://<device-ip>/post \
 | `Channel/SetCustomPageIndex` | Select custom page | `CustomPageIndex` |
 | `Channel/GetClockInfo` | Get clock face info | `ClockId` |
 
+> `Channel/GetAllConf`'s field set varies by firmware — a current Pixoo-64 omits `SelectIndex` from the response. `Channel/GetIndex` returns it reliably.
+
 #### Drawing / Animation
 
 | Command | Description | Key Parameters |
