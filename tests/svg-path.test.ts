@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseSvgPath, fillPolygon, renderSvgPath, type Point } from '../src/svg-path.js';
+import {
+  parseSvgPath,
+  parseSvgPathSubpaths,
+  fillPolygon,
+  fillSubpaths,
+  renderSvgPath,
+  type Point,
+} from '../src/svg-path.js';
 import { Canvas } from '../src/canvas.js';
 
 describe('parseSvgPath', () => {
@@ -91,36 +98,32 @@ describe('parseSvgPath', () => {
     ]);
   });
 
-  it('parses absolute cubic bezier C (line to endpoint)', () => {
+  it('samples absolute cubic bezier C along the curve', () => {
     const points = parseSvgPath('M0 0 C1 2 3 4 5 6');
-    expect(points).toEqual([
-      { x: 0, y: 0 },
-      { x: 5, y: 6 },
-    ]);
+    expect(points).toHaveLength(13); // start + 12 samples
+    expect(points[0]).toEqual({ x: 0, y: 0 });
+    expect(points.at(-1)).toEqual({ x: 5, y: 6 });
   });
 
-  it('parses relative cubic bezier c', () => {
+  it('samples relative cubic bezier c to the correct endpoint', () => {
     const points = parseSvgPath('M10 10 c1 2 3 4 5 6');
-    expect(points).toEqual([
-      { x: 10, y: 10 },
-      { x: 15, y: 16 },
-    ]);
+    expect(points[0]).toEqual({ x: 10, y: 10 });
+    expect(points.at(-1)).toEqual({ x: 15, y: 16 });
   });
 
-  it('parses absolute quadratic bezier Q (line to endpoint)', () => {
-    const points = parseSvgPath('M0 0 Q5 10 10 0');
-    expect(points).toEqual([
-      { x: 0, y: 0 },
-      { x: 10, y: 0 },
-    ]);
+  it('samples quadratic bezier Q through the curve midpoint', () => {
+    const points = parseSvgPath('M0 0 Q8 16 16 0');
+    expect(points.at(-1)).toEqual({ x: 16, y: 0 });
+    // The t=0.5 sample sits at the curve apex (8, 8) — an endpoint-jump would skip it
+    const mid = points[Math.floor(points.length / 2)]!;
+    expect(mid.x).toBeCloseTo(8, 5);
+    expect(mid.y).toBeCloseTo(8, 5);
   });
 
-  it('parses relative quadratic bezier q', () => {
+  it('samples relative quadratic bezier q to the correct endpoint', () => {
     const points = parseSvgPath('M10 10 q5 10 10 0');
-    expect(points).toEqual([
-      { x: 10, y: 10 },
-      { x: 20, y: 10 },
-    ]);
+    expect(points[0]).toEqual({ x: 10, y: 10 });
+    expect(points.at(-1)).toEqual({ x: 20, y: 10 });
   });
 
   it('parses absolute arc A (line to endpoint)', () => {
@@ -139,20 +142,32 @@ describe('parseSvgPath', () => {
     ]);
   });
 
-  it('parses smooth cubic S', () => {
+  it('falls back to the current point for S with no preceding curve', () => {
     const points = parseSvgPath('M0 0 S3 4 5 6');
-    expect(points).toEqual([
-      { x: 0, y: 0 },
-      { x: 5, y: 6 },
-    ]);
+    expect(points[0]).toEqual({ x: 0, y: 0 });
+    expect(points.at(-1)).toEqual({ x: 5, y: 6 });
   });
 
-  it('parses smooth quadratic T', () => {
+  it('reflects the control point for smooth cubic S', () => {
+    // C ends with control (8,8); S reflects it to (8,-8) around the join (8,0)
+    const points = parseSvgPath('M0 0 C0 8 8 8 8 0 S16 -8 16 0');
+    expect(points).toHaveLength(25); // start + 12 + 12
+    expect(points.at(-1)).toEqual({ x: 16, y: 0 });
+    // The S segment dips below the axis because the reflected control pulls it down
+    expect(points[13]!.y).toBeLessThan(0);
+  });
+
+  it('falls back to the current point for T with no preceding curve', () => {
     const points = parseSvgPath('M0 0 T10 20');
-    expect(points).toEqual([
-      { x: 0, y: 0 },
-      { x: 10, y: 20 },
-    ]);
+    expect(points.at(-1)).toEqual({ x: 10, y: 20 });
+  });
+
+  it('reflects the control point for smooth quadratic T', () => {
+    // Q control (4,8) reflects around (8,0) to (12,-8): second hump mirrors below the axis
+    const points = parseSvgPath('M0 0 Q4 8 8 0 T16 0');
+    expect(points.at(-1)).toEqual({ x: 16, y: 0 });
+    const tMid = points[1 + 12 + 5]!; // t=0.5 of the T segment
+    expect(tMid.y).toBeLessThan(0);
   });
 
   it('handles negative coordinates', () => {
@@ -262,5 +277,72 @@ describe('renderSvgPath', () => {
       }
     }
     expect(anySet).toBe(false);
+  });
+});
+
+describe('subpaths and implicit closure', () => {
+  const countRed = (c: Canvas): number => {
+    let n = 0;
+    for (let y = 0; y < 64; y++) {
+      for (let x = 0; x < 64; x++) {
+        if (c.getPixel(x, y)[0] === 255) n++;
+      }
+    }
+    return n;
+  };
+
+  it('fills an unclosed path identically to its Z-closed form', () => {
+    const open = new Canvas();
+    renderSvgPath(open, 'M 8 8 L 56 8 L 32 56', [255, 0, 0], [64, 64]);
+    const closed = new Canvas();
+    renderSvgPath(closed, 'M 8 8 L 56 8 L 32 56 Z', [255, 0, 0], [64, 64]);
+    const openCount = countRed(open);
+    expect(openCount).toBeGreaterThan(500);
+    expect(openCount).toBe(countRed(closed));
+  });
+
+  it('fills multi-subpath paths with even-odd holes (donut)', () => {
+    const c = new Canvas();
+    renderSvgPath(c, 'M 8 8 H 56 V 56 H 8 Z M 24 24 H 40 V 40 H 24 Z', [0, 255, 0], [64, 64]);
+    expect(c.getPixel(32, 32)).toEqual([0, 0, 0]); // hole stays empty
+    expect(c.getPixel(16, 32)).toEqual([0, 255, 0]); // ring is filled
+    expect(c.getPixel(32, 12)).toEqual([0, 255, 0]); // top band — no phantom connector notch
+  });
+
+  it('parseSvgPathSubpaths returns one ring per subpath', () => {
+    const rings = parseSvgPathSubpaths('M 8 8 H 56 V 56 H 8 Z M 24 24 H 40 V 40 H 24 Z');
+    expect(rings).toHaveLength(2);
+  });
+
+  it('fillSubpaths fills rings with holes directly', () => {
+    const c = new Canvas();
+    fillSubpaths(
+      c,
+      [
+        [
+          { x: 10, y: 10 },
+          { x: 50, y: 10 },
+          { x: 50, y: 50 },
+          { x: 10, y: 50 },
+        ],
+        [
+          { x: 25, y: 25 },
+          { x: 35, y: 25 },
+          { x: 35, y: 35 },
+          { x: 25, y: 35 },
+        ],
+      ],
+      [255, 0, 0],
+    );
+    expect(c.getPixel(30, 30)).toEqual([0, 0, 0]);
+    expect(c.getPixel(15, 30)).toEqual([255, 0, 0]);
+  });
+
+  it('parses compact decimal coordinates', () => {
+    expect(parseSvgPath('M0 0l.5.5 1 1')).toEqual([
+      { x: 0, y: 0 },
+      { x: 0.5, y: 0.5 },
+      { x: 1.5, y: 1.5 },
+    ]);
   });
 });

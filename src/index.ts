@@ -52,4 +52,11 @@ export {
 } from './preview.js';
 
 // SVG
-export { type Point, parseSvgPath, fillPolygon, renderSvgPath } from './svg-path.js';
+export {
+  type Point,
+  parseSvgPath,
+  parseSvgPathSubpaths,
+  fillPolygon,
+  fillSubpaths,
+  renderSvgPath,
+} from './svg-path.js';
