@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-11
+
+### Added
+
+- `parseSvgPathSubpaths()` — parses a path `d` string into one ring per M/z boundary; exported from the barrel (#3).
+- `fillSubpaths()` — even-odd scanline fill across multiple rings; produces holes for donut shapes and letter counters; exported from the barrel (#3).
+- `prepublishOnly` script in package.json — runs `bun run build` automatically before `npm publish`.
+
+### Fixed
+
+- **font**: `glyphMetrics()` tracks both leftmost and rightmost ink columns; `drawText` renders each glyph shifted so its leftmost ink lands at the pen position — eliminates phantom left-side gaps on narrow/centered glyphs (`!`, `.`, `:`, `'`, `(`, `i`) (#2).
+- **svg-path**: `renderSvgPath`/`fillSubpaths` split paths at M/z boundaries and use modulo-edge implicit ring closure — unclosed paths fill identically to their Z-terminated equivalents; multi-subpath paths produce correct even-odd holes instead of a phantom connector edge (#3).
+- **svg-path**: `tokenize` uses a `NUMBER_RE` regex lexer instead of string-split — handles compact decimals (`.5.5`, `5-3`) and exponents without producing NaN coordinates (#4).
+- **svg-path**: C/S/Q/T Bézier commands are now sampled at `CURVE_SAMPLES=12` points instead of collapsing to their endpoint; S/T carry the reflected control-point state across segments (#10).
+- **color**: `hslToRgb` normalizes hue with `((h % 360) + 360) % 360` before the sector branches — out-of-range hues from animated sweeps no longer produce wrong channels or negative RGB components that wrap mod 256 (#5).
+- **client**: `push()` and `pushAnimation()` check the `Draw/ResetHttpGifId` response; `error_code !== 0` causes an immediate return without sending any frames (#6).
+- **client**: `DeviceConfig` fields are now all optional — the `Channel/GetAllConf` response set varies by firmware; JSDoc notes `getChannel()` as the reliable channel source (#7).
+
+### Changed
+
+- **animation**: `Animation` constructor no longer emits a `console.warn` for `frameCount > 40`; the limit is now documented in the JSDoc instead.
+
+### Removed
+
+- `package-lock.json` removed from version control — `bun.lock` is the canonical lockfile; `package-lock.json` added to `.gitignore`.
+
 ## [0.4.0] — 2026-02-22
 
 ### Added
