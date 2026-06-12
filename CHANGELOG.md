@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-06-11
+
+### Added
+
+- **`tryResolveColor(c)`** — returns `RGB | null` for callers that need to probe without throwing (#8).
+- **`Canvas.getPixelRgba(x, y)`** — returns the stored `[r, g, b, a]` tuple; `getPixel` continues to return RGB only (#11).
+- **`Canvas.toRgbBuffer()`** — flattens the RGBA working buffer to a `width × height × 3` RGB array, compositing alpha over black. This is the device wire layout (#11).
+- **`Canvas.setPixel(x, y, color, alpha?)`** — optional `alpha` parameter (default 255) stores the alpha byte directly (#11).
+- **`PixooResult<T>`** discriminated union — `{ ok: true; data }` or `{ ok: false; kind; message; status?; deviceCode? }`. Narrowing on `ok` is the only way to reach response data, so TypeScript forces error inspection (#9).
+- **`PixooFailure`** and **`PixooErrorKind`** (`'network' | 'timeout' | 'http' | 'device'`) — exported from the barrel; separates retryable transport failures from device rejections (#9).
+- **`unwrap(result)`** — throws `[kind] message` on failure; convenience for scripts that prefer exceptions over narrowing (#9).
+- **`DiscoveredDevice`** — `{ name, id, ip }` type for results from `PixooClient.discover()` (#12).
+- **`PixooClient.discover(timeoutMs?)`** — static method that calls Divoom's cloud discovery endpoint and returns typed `DiscoveredDevice[]` for Pixoo devices on the caller's LAN (#12).
+
+### Changed
+
+- **Breaking:** **`resolveColor`** throws an `Error` on unresolvable strings instead of returning white; tuple/number components are clamped to 0–255 integers (#8).
+- **Breaking:** **`Canvas`** internal buffer is now RGBA (`width × height × 4`). A fresh canvas is fully transparent (alpha 0); drawing primitives write alpha 255. `Canvas.buffer` is the raw RGBA data — use `toRgbBuffer()` or `toBase64()` for device wire format (#11).
+- **Breaking:** **`Canvas.blit`** uses source-over alpha compositing — undrawn (alpha 0) source pixels are skipped; drawn true-black pixels land correctly. `transparentColor` option deprecated; real transparency comes from source alpha (#11).
+- **Breaking:** **`Canvas.blendPixel`** is now a proper source-over composite — destination alpha participates; compositing onto a transparent pixel stores the color at the given opacity (#11).
+- **Breaking:** **`Canvas.clear()`** with no argument erases to fully transparent (was fill black); `clear(color)` fills opaque as before (#11).
+- **Breaking:** All `PixooClient` methods return `PixooResult` instead of the removed `PixooResponse` type. Device rejections (non-zero `error_code`) are returned immediately without retry (#9).
+- **Breaking:** **`pushAnimation`** throws `RangeError` for empty frames instead of returning a `PixooResult` error (#9).
+- **`Canvas` constructor** accepts RGBA buffers (`width × height × 4`) in addition to RGB buffers (`width × height × 3`, upconverted to fully opaque RGBA) (#11).
+- **`Canvas.scroll`** vacated pixels become transparent instead of black (#11).
+- **`loadImage`** composites source pixels via `blendPixel` — source alpha is preserved; semi-transparent edges blend instead of hard-thresholding at 128 (#11).
+- **`toBase64()`** and the PNG/GIF encoders in `preview.ts` call `toRgbBuffer()` to flatten alpha at the export edge (#11).
+
+### Removed
+
+- **`Color.TRANSPARENT`** — was a sentinel alias for `[0, 0, 0]` (not real alpha). Canvas now has native transparency (#8 #11).
+- **`PixooResponse`** — replaced by `PixooResult<T>` (#9).
+
 ## [0.5.0] — 2026-06-11
 
 ### Added
