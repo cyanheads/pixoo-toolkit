@@ -49,6 +49,24 @@ describe('hslToRgb', () => {
   it('converts magenta (h=300)', () => {
     expect(hslToRgb([300, 1, 0.5])).toEqual([255, 0, 255]);
   });
+
+  it('normalizes hues above 360', () => {
+    expect(hslToRgb([400, 1, 0.5])).toEqual(hslToRgb([40, 1, 0.5]));
+    expect(hslToRgb([720, 1, 0.5])).toEqual([255, 0, 0]);
+  });
+
+  it('normalizes negative hues', () => {
+    expect(hslToRgb([-20, 1, 0.5])).toEqual(hslToRgb([340, 1, 0.5]));
+  });
+
+  it('keeps components in gamut for any hue', () => {
+    for (let h = -720; h <= 1080; h += 37) {
+      for (const v of hslToRgb([h, 1, 0.5])) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(255);
+      }
+    }
+  });
 });
 
 describe('rgbToHsl', () => {
