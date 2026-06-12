@@ -227,3 +227,49 @@ describe('lowercase glyphs', () => {
     expect(lower.buffer).toEqual(upper.buffer);
   });
 });
+
+describe('proportional metrics (tight ink bounds)', () => {
+  it('anchors narrow glyphs at the pen position', () => {
+    // Center-aligned cells ('!' is column 2 of 5) must not leave phantom space left of the pen
+    for (const ch of ['!', '.', ':', "'", '(', 'i']) {
+      const c = new Canvas();
+      drawText(c, ch, 0, 0, [255, 0, 0]);
+      let minX = 64;
+      for (let y = 0; y < 7; y++) {
+        for (let x = 0; x < 64; x++) {
+          if (c.getPixel(x, y)[0] === 255) minX = Math.min(minX, x);
+        }
+      }
+      expect(minX, `'${ch}' ink should start at the pen (x=0)`).toBe(0);
+    }
+  });
+
+  it('measures narrow punctuation by ink width', () => {
+    expect(measureText('!')).toBe(1);
+    expect(measureText('.')).toBe(1);
+    expect(measureText(':')).toBe(1);
+    expect(measureText('(')).toBe(3);
+  });
+
+  it('advance covers exactly ink width + trailing spacing', () => {
+    const c = new Canvas();
+    expect(drawText(c, '!', 0, 0, [255, 0, 0])).toBe(2); // 1px ink + 1px spacing
+  });
+
+  it('renders symmetric gaps around narrow glyphs (H.H)', () => {
+    const c = new Canvas();
+    drawText(c, 'H.H', 0, 0, [255, 0, 0]);
+    // H ink x=0..4, '.' ink at x=6 (bottom row), second H ink x=8..12
+    expect(c.getPixel(6, 6)).toEqual([255, 0, 0]);
+    expect(c.getPixel(5, 6)).toEqual([0, 0, 0]);
+    expect(c.getPixel(7, 6)).toEqual([0, 0, 0]);
+    expect(c.getPixel(8, 0)).toEqual([255, 0, 0]);
+  });
+
+  it('keeps tight metrics under scale', () => {
+    const c = new Canvas();
+    const w = drawText(c, '!', 0, 0, [255, 0, 0], { scale: 2 });
+    expect(w).toBe(4); // (1px ink + 1px spacing) * 2
+    expect(c.getPixel(0, 0)).toEqual([255, 0, 0]); // ink starts at the pen even when scaled
+  });
+});

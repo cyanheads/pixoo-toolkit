@@ -231,52 +231,63 @@ export interface TextOptions {
   scale?: number;
 }
 
-/** Calculate the rendered width of a glyph from its bitmask data. */
-function glyphWidth(font: BitmapFont, ch: string, glyph: readonly number[]): number {
-  let maxBit = 0;
+/**
+ * Tight glyph metrics from bitmask data: `width` is the ink span in pixels,
+ * `offset` is the leftmost ink column within the glyph cell. Glyphs with no
+ * ink (space) advance the full cell width.
+ */
+function glyphMetrics(
+  font: BitmapFont,
+  glyph: readonly number[],
+): { width: number; offset: number } {
+  let hi = -1;
+  let lo = 31;
   for (const row of glyph) {
-    if (row > 0) {
-      const bits = Math.floor(Math.log2(row)) + 1;
-      if (bits > maxBit) maxBit = bits;
-    }
+    if (row <= 0) continue;
+    const rowHi = 31 - Math.clz32(row);
+    const rowLo = 31 - Math.clz32(row & -row);
+    if (rowHi > hi) hi = rowHi;
+    if (rowLo < lo) lo = rowLo;
   }
-  return Math.max(maxBit, ch === ' ' ? font.width : 1);
+  if (hi < 0) return { width: font.width, offset: 0 };
+  // Bit (font.width - 1) is the leftmost pixel column
+  return { width: hi - lo + 1, offset: font.width - 1 - hi };
 }
 
 /** Resolve a character to a glyph, auto-uppercasing if the font lacks lowercase. */
-function resolveGlyph(
-  font: BitmapFont,
-  ch: string,
-): { ch: string; glyph: readonly number[] | undefined } {
-  let glyph = font.glyphs[ch];
+function resolveGlyph(font: BitmapFont, ch: string): readonly number[] | undefined {
+  const glyph = font.glyphs[ch];
   if (!glyph && ch >= 'a' && ch <= 'z') {
-    const upper = ch.toUpperCase();
-    glyph = font.glyphs[upper];
-    if (glyph) return { ch: upper, glyph };
+    const upper = font.glyphs[ch.toUpperCase()];
+    if (upper) return upper;
   }
-  return { ch, glyph: glyph ?? font.glyphs['?'] };
+  return glyph ?? font.glyphs['?'];
 }
 
-/** Measure the pixel width of a string without drawing it. */
+/** Measure the pixel width of a string without drawing it (tight ink bounds, no trailing spacing). */
 export function measureText(text: string, opts: TextOptions = {}): number {
   const font = opts.font ?? FONT_5x7;
   const spacing = opts.letterSpacing ?? 1;
   const scale = opts.scale ?? 1;
   let width = 0;
   for (let i = 0; i < text.length; i++) {
-    const { ch, glyph } = resolveGlyph(font, text[i]!);
+    const glyph = resolveGlyph(font, text[i]!);
     if (!glyph) {
       width += (font.width + spacing) * scale;
       continue;
     }
-    width += (glyphWidth(font, ch, glyph) + spacing) * scale;
+    width += (glyphMetrics(font, glyph).width + spacing) * scale;
   }
   // Remove trailing spacing
   if (text.length > 0) width -= spacing * scale;
   return width;
 }
 
-/** Draw a text string onto a canvas. Returns the width drawn. */
+/**
+ * Draw a text string onto a canvas. Each glyph's leftmost ink lands at the
+ * pen position (tight proportional metrics — center-aligned glyph cells get
+ * no phantom left gap). Returns the cursor advance, including trailing spacing.
+ */
 export function drawText(
   canvas: Canvas,
   text: string,
@@ -292,24 +303,24 @@ export function drawText(
   let cx = x;
 
   for (let i = 0; i < text.length; i++) {
-    const { ch, glyph } = resolveGlyph(font, text[i]!);
+    const glyph = resolveGlyph(font, text[i]!);
     if (!glyph) {
       cx += (font.width + spacing) * scale;
       continue;
     }
 
-    const gw = glyphWidth(font, ch, glyph);
+    const { width: gw, offset } = glyphMetrics(font, glyph);
 
-    // Render glyph
+    // Render glyph, shifted so its leftmost ink column sits at the pen
     for (let gy = 0; gy < font.height; gy++) {
       const row = glyph[gy]!;
-      for (let gx = 0; gx < font.width; gx++) {
+      for (let gx = offset; gx < font.width; gx++) {
         // Bit order: MSB = left pixel
         const bit = (row >> (font.width - 1 - gx)) & 1;
         if (bit) {
           for (let sy = 0; sy < scale; sy++) {
             for (let sx = 0; sx < scale; sx++) {
-              const px = cx + gx * scale + sx;
+              const px = cx + (gx - offset) * scale + sx;
               const py = y + gy * scale + sy;
               canvas.setPixel(px, py, [r, g, b]);
             }
