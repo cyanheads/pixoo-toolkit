@@ -2,30 +2,41 @@ import { describe, it, expect } from 'vitest';
 import { Canvas, DEFAULT_SIZE } from '../src/canvas.js';
 
 describe('Canvas construction', () => {
-  it('creates a 64x64 canvas', () => {
+  it('creates a 64x64 canvas with an RGBA buffer', () => {
     const c = new Canvas();
     expect(c.width).toBe(64);
     expect(c.height).toBe(64);
-    expect(c.buffer.length).toBe(64 * 64 * 3);
+    expect(c.buffer.length).toBe(64 * 64 * 4);
   });
 
-  it('initializes to black by default', () => {
+  it('initializes fully transparent (reads as black)', () => {
     const c = new Canvas();
     expect(c.getPixel(0, 0)).toEqual([0, 0, 0]);
-    expect(c.getPixel(63, 63)).toEqual([0, 0, 0]);
+    expect(c.getPixelRgba(63, 63)).toEqual([0, 0, 0, 0]);
   });
 
-  it('accepts a pre-filled buffer', () => {
+  it('accepts a pre-filled RGBA buffer', () => {
+    const buf = new Uint8Array(64 * 64 * 4);
+    buf[0] = 255;
+    buf[1] = 128;
+    buf[2] = 64;
+    buf[3] = 200;
+    const c = new Canvas(buf);
+    expect(c.getPixelRgba(0, 0)).toEqual([255, 128, 64, 200]);
+  });
+
+  it('upconverts a legacy RGB buffer to opaque RGBA', () => {
     const buf = new Uint8Array(64 * 64 * 3);
     buf[0] = 255;
     buf[1] = 128;
     buf[2] = 64;
     const c = new Canvas(buf);
-    expect(c.getPixel(0, 0)).toEqual([255, 128, 64]);
+    expect(c.buffer.length).toBe(64 * 64 * 4);
+    expect(c.getPixelRgba(0, 0)).toEqual([255, 128, 64, 255]);
   });
 
   it('copies the source buffer (not aliased)', () => {
-    const buf = new Uint8Array(64 * 64 * 3);
+    const buf = new Uint8Array(64 * 64 * 4);
     buf[0] = 100;
     const c = new Canvas(buf);
     buf[0] = 200;
@@ -40,20 +51,20 @@ describe('Canvas construction', () => {
     const c = new Canvas(16);
     expect(c.width).toBe(16);
     expect(c.height).toBe(16);
-    expect(c.buffer.length).toBe(16 * 16 * 3);
+    expect(c.buffer.length).toBe(16 * 16 * 4);
   });
 
   it('creates a 32x32 canvas', () => {
     const c = new Canvas(32);
     expect(c.width).toBe(32);
     expect(c.height).toBe(32);
-    expect(c.buffer.length).toBe(32 * 32 * 3);
+    expect(c.buffer.length).toBe(32 * 32 * 4);
   });
 
   it('creates a 64x64 canvas with explicit size', () => {
     const c = new Canvas(64);
     expect(c.width).toBe(64);
-    expect(c.buffer.length).toBe(64 * 64 * 3);
+    expect(c.buffer.length).toBe(64 * 64 * 4);
   });
 
   it('infers size from buffer length', () => {
@@ -338,10 +349,10 @@ describe('blit', () => {
     expect(dst.getPixel(11, 10)).toEqual([0, 255, 0]);
   });
 
-  it('skips black pixels by default (transparent)', () => {
+  it('skips undrawn (transparent) source pixels', () => {
     const src = new Canvas();
     src.setPixel(0, 0, [255, 0, 0]);
-    // (1,0) is black by default
+    // (1,0) was never drawn — alpha 0
 
     const dst = new Canvas();
     dst.clear([128, 128, 128]);
@@ -350,16 +361,51 @@ describe('blit', () => {
     expect(dst.getPixel(11, 10)).toEqual([128, 128, 128]); // not overwritten
   });
 
-  it('copies all pixels when transparentColor is null', () => {
+  it('composites explicitly drawn black (no color key)', () => {
+    const src = new Canvas();
+    src.setPixel(0, 0, [0, 0, 0]); // true black, drawn opaque
+
+    const dst = new Canvas();
+    dst.clear([128, 128, 128]);
+    dst.blit(src, 10, 10);
+    expect(dst.getPixel(10, 10)).toEqual([0, 0, 0]); // black lands
+  });
+
+  it('blends semi-transparent source pixels (source-over)', () => {
+    const src = new Canvas();
+    src.setPixel(0, 0, [255, 0, 0], 128);
+
+    const dst = new Canvas();
+    dst.clear([0, 0, 255]);
+    dst.blit(src, 10, 10);
+    const [r, , b] = dst.getPixel(10, 10);
+    expect(r).toBeGreaterThan(100); // red came through
+    expect(b).toBeGreaterThan(100); // blue shows underneath
+    expect(dst.getPixelRgba(10, 10)[3]).toBe(255); // opaque destination stays opaque
+  });
+
+  it('honors the deprecated transparentColor key for drawn pixels', () => {
     const src = new Canvas();
     src.setPixel(0, 0, [255, 0, 0]);
-    // (1,0) is black
+    src.setPixel(1, 0, [0, 0, 0]); // drawn black, keyed out below
+
+    const dst = new Canvas();
+    dst.clear([128, 128, 128]);
+    dst.blit(src, 10, 10, { transparentColor: [0, 0, 0] });
+    expect(dst.getPixel(10, 10)).toEqual([255, 0, 0]);
+    expect(dst.getPixel(11, 10)).toEqual([128, 128, 128]); // keyed black skipped
+  });
+
+  it('treats transparentColor: null as plain source-over', () => {
+    const src = new Canvas();
+    src.setPixel(0, 0, [255, 0, 0]);
+    // (1,0) undrawn — alpha 0, skipped regardless of the key
 
     const dst = new Canvas();
     dst.clear([128, 128, 128]);
     dst.blit(src, 10, 10, { transparentColor: null });
     expect(dst.getPixel(10, 10)).toEqual([255, 0, 0]);
-    expect(dst.getPixel(11, 10)).toEqual([0, 0, 0]); // black WAS copied
+    expect(dst.getPixel(11, 10)).toEqual([128, 128, 128]);
   });
 });
 
@@ -437,6 +483,57 @@ describe('toBase64', () => {
     expect(decoded[0]).toBe(255);
     expect(decoded[1]).toBe(128);
     expect(decoded[2]).toBe(64);
+  });
+});
+
+describe('RGBA semantics', () => {
+  it('drawing primitives write opaque pixels', () => {
+    const c = new Canvas();
+    c.setPixel(0, 0, [255, 0, 0]);
+    c.fillRect(1, 0, 1, 1, [0, 255, 0]);
+    c.drawLineH(2, 0, 1, [0, 0, 255]);
+    expect(c.getPixelRgba(0, 0)[3]).toBe(255);
+    expect(c.getPixelRgba(1, 0)[3]).toBe(255);
+    expect(c.getPixelRgba(2, 0)[3]).toBe(255);
+  });
+
+  it('setPixel stores an explicit alpha', () => {
+    const c = new Canvas();
+    c.setPixel(0, 0, [255, 0, 0], 128);
+    expect(c.getPixelRgba(0, 0)).toEqual([255, 0, 0, 128]);
+  });
+
+  it('clear() erases to transparent; clear(color) fills opaque', () => {
+    const c = new Canvas();
+    c.clear([10, 20, 30]);
+    expect(c.getPixelRgba(5, 5)).toEqual([10, 20, 30, 255]);
+    c.clear();
+    expect(c.getPixelRgba(5, 5)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('toRgbBuffer flattens alpha over black', () => {
+    const c = new Canvas();
+    c.setPixel(0, 0, [200, 100, 50]); // opaque
+    c.setPixel(1, 0, [200, 100, 50], 128); // half
+    const rgb = c.toRgbBuffer();
+    expect(rgb.length).toBe(64 * 64 * 3);
+    expect([rgb[0], rgb[1], rgb[2]]).toEqual([200, 100, 50]);
+    expect(rgb[3]).toBe(Math.round((200 * 128) / 255));
+    expect(rgb[4]).toBe(Math.round((100 * 128) / 255));
+  });
+
+  it('blendPixel onto a transparent pixel stores the color at that alpha', () => {
+    const c = new Canvas();
+    c.blendPixel(0, 0, [255, 0, 0], 0.5);
+    const [r, g, b, a] = c.getPixelRgba(0, 0);
+    expect([r, g, b]).toEqual([255, 0, 0]);
+    expect(a).toBe(128);
+  });
+
+  it('clone preserves alpha', () => {
+    const c = new Canvas();
+    c.setPixel(3, 3, [9, 9, 9], 77);
+    expect(c.clone().getPixelRgba(3, 3)).toEqual([9, 9, 9, 77]);
   });
 });
 

@@ -6,7 +6,8 @@ import { type RGB } from './color.js';
  * Load an image file and render it onto a Canvas.
  *
  * Resizes using nearest-neighbor (sharp) to preserve pixel-art crispness.
- * Transparent pixels are left as-is (black by default, or whatever the canvas already has).
+ * Source alpha is preserved: pixels composite source-over onto the canvas,
+ * so semi-transparent edges blend instead of hard-thresholding.
  */
 export async function loadImage(
   path: string,
@@ -57,9 +58,8 @@ export async function loadImage(
       const g = data[i + 1]!;
       const b = data[i + 2]!;
       const a = channels >= 4 ? data[i + 3]! : 255;
-      if (a > 128) {
-        canvas.setPixel(ox + x, oy + y, [r, g, b]);
-      }
+      if (a === 0) continue;
+      canvas.blendPixel(ox + x, oy + y, [r, g, b], a / 255);
     }
   }
 

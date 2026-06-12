@@ -115,8 +115,8 @@ function upscale(rgb: Uint8Array, srcW: number, srcH: number, scale: number): Ui
 export function canvasToPng(canvas: Canvas, scale = 1): Uint8Array {
   const w = canvas.width * scale;
   const h = canvas.height * scale;
-  const rgb =
-    scale === 1 ? canvas.buffer : upscale(canvas.buffer, canvas.width, canvas.height, scale);
+  const flat = canvas.toRgbBuffer();
+  const rgb = scale === 1 ? flat : upscale(flat, canvas.width, canvas.height, scale);
   return encodePng(w, h, rgb);
 }
 
@@ -178,8 +178,8 @@ export function encodeAnimationGif(
   const gif = GIFEncoder();
 
   for (const frame of frames) {
-    const rgb =
-      scale === 1 ? frame.buffer : upscale(frame.buffer, frame.width, frame.height, scale);
+    const flat = frame.toRgbBuffer();
+    const rgb = scale === 1 ? flat : upscale(flat, frame.width, frame.height, scale);
     const rgba = rgbToRgba(rgb);
     const palette = quantize(rgba, maxColors);
     const index = applyPalette(rgba, palette);
