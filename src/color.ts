@@ -74,17 +74,44 @@ export function parseHexString(s: string): RGB | null {
   return null;
 }
 
-/** Resolve any ColorLike to an RGB tuple. Returns white for unresolvable strings. */
-export function resolveColor(c: ColorLike): RGB {
+/** Clamp and round a numeric component into the 0–255 byte range. */
+function clampByte(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return v <= 0 ? 0 : v >= 255 ? 255 : Math.round(v);
+}
+
+/**
+ * Resolve any ColorLike to an RGB tuple, or null when a string is
+ * unresolvable. Tuple and number inputs always resolve (tuple components
+ * are clamped to 0–255 integers).
+ */
+export function tryResolveColor(c: ColorLike): RGB | null {
   if (Array.isArray(c)) {
-    return [c[0] ?? 0, c[1] ?? 0, c[2] ?? 0];
+    return [clampByte(c[0] ?? 0), clampByte(c[1] ?? 0), clampByte(c[2] ?? 0)];
   }
   if (typeof c === 'number') return hexToRgb(c);
   // c is string here — TS needs this guard since Array.isArray doesn't narrow readonly tuples
   const s = c as string;
   const named = NAMED_COLORS[s.toLowerCase()];
   if (named) return named;
-  return parseHexString(s) ?? [255, 255, 255];
+  return parseHexString(s);
+}
+
+/**
+ * Resolve any ColorLike to an RGB tuple.
+ *
+ * Throws on unresolvable strings so typos surface loudly instead of
+ * silently rendering a fallback color. Use `tryResolveColor` to probe
+ * without throwing.
+ */
+export function resolveColor(c: ColorLike): RGB {
+  const rgb = tryResolveColor(c);
+  if (!rgb) {
+    throw new Error(
+      `Unknown color: ${JSON.stringify(c)} — expected a named color, '#RGB'/'#RRGGBB' hex string, 0xRRGGBB number, or [r, g, b] tuple`,
+    );
+  }
+  return rgb;
 }
 
 /** Linearly interpolate between two colors. t: 0–1. */
@@ -158,5 +185,4 @@ export const Color = {
   PURPLE: [128, 0, 128] as RGB,
   PINK: [255, 105, 180] as RGB,
   GRAY: [128, 128, 128] as RGB,
-  TRANSPARENT: [0, 0, 0] as RGB, // no actual alpha — sentinel for blit transparency key
 };

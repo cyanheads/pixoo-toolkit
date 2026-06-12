@@ -6,6 +6,7 @@ import {
   hexToRgb,
   parseHexString,
   resolveColor,
+  tryResolveColor,
   lerpColor,
   dimColor,
   NAMED_COLORS,
@@ -194,8 +195,28 @@ describe('resolveColor', () => {
     expect(resolveColor('claude')).toEqual([230, 150, 70]);
   });
 
-  it('returns white for unresolvable strings', () => {
-    expect(resolveColor('notacolor')).toEqual([255, 255, 255]);
+  it('throws for unresolvable strings', () => {
+    expect(() => resolveColor('notacolor')).toThrow(/Unknown color/);
+    expect(() => resolveColor('drak-blue')).toThrow(/Unknown color/);
+    expect(() => resolveColor('#GGHHII')).toThrow(/Unknown color/);
+  });
+
+  it('clamps and rounds out-of-range tuple components', () => {
+    expect(resolveColor([300, -20, 70.4])).toEqual([255, 0, 70]);
+    expect(resolveColor([Number.NaN, 128, 255])).toEqual([0, 128, 255]);
+  });
+});
+
+describe('tryResolveColor', () => {
+  it('returns null instead of throwing for unresolvable strings', () => {
+    expect(tryResolveColor('notacolor')).toBeNull();
+    expect(tryResolveColor('#GGHHII')).toBeNull();
+  });
+
+  it('resolves valid inputs like resolveColor', () => {
+    expect(tryResolveColor('red')).toEqual([255, 0, 0]);
+    expect(tryResolveColor('#ff8040')).toEqual([255, 128, 64]);
+    expect(tryResolveColor([10, 20, 30])).toEqual([10, 20, 30]);
   });
 });
 
