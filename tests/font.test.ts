@@ -193,6 +193,19 @@ describe('drawTextCentered', () => {
   });
 });
 
+describe('FONT_3x5 glyph distinctness', () => {
+  it("'g' glyph is pixel-distinct from digit '9'", () => {
+    const cg = new Canvas();
+    drawText(cg, 'g', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+
+    const c9 = new Canvas();
+    drawText(c9, '9', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+
+    // The rendered bitmaps must differ — previously 'g' was visually identical to '9'
+    expect(Buffer.from(cg.buffer).equals(Buffer.from(c9.buffer))).toBe(false);
+  });
+});
+
 describe('lowercase glyphs', () => {
   it('FONT_3x5 renders distinct lowercase glyphs', () => {
     const upper = new Canvas();

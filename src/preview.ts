@@ -1,6 +1,17 @@
 import { writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
-import { GIFEncoder, quantize, applyPalette } from 'gifenc';
+import * as gifencNs from 'gifenc';
+// gifenc is CJS with no exports map. Node resolves the CJS build and wraps it as a
+// default-only ESM import; Bun resolves the `module` field (ESM build) with named
+// exports at top level. The default-unwrap below handles the Node CJS interop path
+// (default is the module object) while the fallback covers Bun / bundler ESM paths
+// (named exports live directly on the namespace, default is the GIFEncoder function).
+const _gifenc =
+  typeof (gifencNs as { default?: unknown }).default === 'object' &&
+  (gifencNs as { default?: typeof gifencNs }).default !== null
+    ? (gifencNs as { default?: typeof gifencNs }).default!
+    : gifencNs;
+const { GIFEncoder, quantize, applyPalette } = _gifenc;
 import { Canvas } from './canvas.js';
 
 /**

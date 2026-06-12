@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-06-12
+
+### Fixed
+
+- **preview**: `gifenc` import rewritten as a namespace import with runtime default-unwrap — fixes `SyntaxError: The requested module 'gifenc' does not provide an export named 'GIFEncoder'` under Node v26 ESM. The CJS build's named-export lexer fails in strict ESM; the new pattern handles Node CJS interop (`gifencNs.default` is the module object) and Bun/bundler ESM paths (`gifencNs` has named exports directly) without branching on runtime.
+- **font**: `FONT_3x5` lowercase `'g'` glyph redrawn — row 2 changed from `011` to `101` (open bowl instead of closed bar), making `'g'` visually distinct from digit `'9'` in the 3×5 grid.
+
 ## [0.6.0] — 2026-06-11
 
 ### Added
