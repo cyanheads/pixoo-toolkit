@@ -1,10 +1,41 @@
 import { Canvas, type PixooSize, DEFAULT_SIZE } from './canvas.js';
 import { type ColorLike, resolveColor, rgbToHex } from './color.js';
 
-/** Response from the Pixoo device. */
-export interface PixooResponse {
-  error_code: number;
-  [key: string]: unknown;
+/**
+ * Why a client call failed. Transport kinds ('network', 'timeout', 'http')
+ * are generally retryable; 'device' means the Pixoo received the command
+ * and rejected it.
+ */
+export type PixooErrorKind = 'network' | 'timeout' | 'http' | 'device';
+
+/** A failed client call. */
+export interface PixooFailure {
+  ok: false;
+  kind: PixooErrorKind;
+  message: string;
+  /** HTTP status code (kind: 'http'). */
+  status?: number;
+  /** The device's non-zero error_code (kind: 'device'). */
+  deviceCode?: number;
+}
+
+/**
+ * Result of a client call. Narrowing on `ok` is the only way to reach the
+ * response data, so failures can't be mistaken for success:
+ *
+ * ```ts
+ * const res = await client.push(canvas);
+ * if (!res.ok) console.error(`${res.kind}: ${res.message}`);
+ * ```
+ */
+export type PixooResult<T = Record<string, unknown>> =
+  | { ok: true; data: T & { error_code: 0 } }
+  | PixooFailure;
+
+/** Unwrap a PixooResult, throwing on failure — for scripts that prefer exceptions. */
+export function unwrap<T>(result: PixooResult<T>): T & { error_code: 0 } {
+  if (!result.ok) throw new Error(`[${result.kind}] ${result.message}`);
+  return result.data;
 }
 
 /**
@@ -31,6 +62,13 @@ export interface DeviceConfig {
   SelectIndex?: number;
 }
 
+/** A Pixoo device discovered on the local network. */
+export interface DiscoveredDevice {
+  name: string;
+  id: number;
+  ip: string;
+}
+
 export enum Channel {
   Faces = 0,
   Cloud = 1,
@@ -52,7 +90,8 @@ export interface PixooClientOptions {
 /**
  * HTTP client for a Divoom Pixoo device.
  *
- * All commands go through `POST http://<ip>/post` with JSON bodies.
+ * All commands go through `POST http://<ip>/post` with JSON bodies and
+ * return a `PixooResult` — errors are values, never thrown.
  */
 export class PixooClient {
   readonly url: string;
@@ -73,10 +112,47 @@ export class PixooClient {
     this.retryDelay = opts.retryDelay ?? 250;
   }
 
-  /** Send a raw command and return the parsed response. Retries on transient network errors. */
-  async send(command: string, params: Record<string, unknown> = {}): Promise<PixooResponse> {
+  /**
+   * Discover Pixoo devices on the local network.
+   *
+   * Calls Divoom's cloud discovery endpoint (`app.divoom-gz.com`) — the
+   * request leaves your network, so Divoom's servers see it. Requires
+   * internet access; intended for one-shot setup, not hot paths. Throws on
+   * network failure or timeout.
+   */
+  static async discover(timeoutMs = 5000): Promise<DiscoveredDevice[]> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch('https://app.divoom-gz.com/Device/ReturnSameLANDevice', {
+        method: 'POST',
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        throw new Error(`Discovery failed: HTTP ${res.status} ${res.statusText}`);
+      }
+      const json = (await res.json()) as {
+        DeviceList?: Array<{ DeviceName?: string; DeviceId?: number; DevicePrivateIP?: string }>;
+      };
+      return (json.DeviceList ?? [])
+        .filter((d) => typeof d.DevicePrivateIP === 'string' && d.DevicePrivateIP.length > 0)
+        .map((d) => ({ name: d.DeviceName ?? '', id: d.DeviceId ?? 0, ip: d.DevicePrivateIP! }));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Send a raw command. Retries transient transport failures with
+   * exponential backoff; device rejections (non-zero error_code) are
+   * returned immediately — retrying a rejected command won't change it.
+   */
+  async send<T = Record<string, unknown>>(
+    command: string,
+    params: Record<string, unknown> = {},
+  ): Promise<PixooResult<T>> {
     const body = JSON.stringify({ Command: command, ...params });
-    let lastError: PixooResponse = { error_code: -1, message: 'No attempts made' };
+    let lastFailure: PixooFailure = { ok: false, kind: 'network', message: 'No attempts made' };
 
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       if (attempt > 0) {
@@ -92,44 +168,53 @@ export class PixooClient {
           signal: controller.signal,
         });
         if (!res.ok) {
-          lastError = {
-            error_code: -1,
-            http_status: res.status,
+          lastFailure = {
+            ok: false,
+            kind: 'http',
+            status: res.status,
             message: `HTTP ${res.status} ${res.statusText}`,
           };
           continue;
         }
-        return (await res.json()) as PixooResponse;
+        const json = (await res.json()) as { error_code: number } & Record<string, unknown>;
+        if (json.error_code !== 0) {
+          return {
+            ok: false,
+            kind: 'device',
+            deviceCode: json.error_code,
+            message: `Device rejected ${command} (error_code ${json.error_code})`,
+          };
+        }
+        return { ok: true, data: json as T & { error_code: 0 } };
       } catch (err) {
         const isTimeout = err instanceof DOMException && err.name === 'AbortError';
-        lastError = {
-          error_code: -1,
-          message: isTimeout
-            ? 'Request timed out'
-            : err instanceof Error
-              ? err.message
-              : 'Unknown error',
-        };
+        lastFailure = isTimeout
+          ? { ok: false, kind: 'timeout', message: 'Request timed out' }
+          : {
+              ok: false,
+              kind: 'network',
+              message: err instanceof Error ? err.message : 'Unknown error',
+            };
       } finally {
         clearTimeout(timer);
       }
     }
 
-    return lastError;
+    return lastFailure;
   }
 
   // --- Display ---
 
   /** Reset the device's internal GIF ID counter. Call before pushing if stale. */
-  async resetGifId(): Promise<PixooResponse> {
+  async resetGifId(): Promise<PixooResult> {
     return this.send('Draw/ResetHttpGifId');
   }
 
   /** Push a single canvas frame to the display. */
-  async push(canvas: Canvas, speed = 100): Promise<PixooResponse> {
+  async push(canvas: Canvas, speed = 100): Promise<PixooResult> {
     // A failed reset means the device will silently ignore the frame — surface it
     const reset = await this.resetGifId();
-    if (reset.error_code !== 0) return reset;
+    if (!reset.ok) return reset;
     this.picId = (this.picId + 1) % 10000;
     return this.send('Draw/SendHttpGif', {
       PicNum: 1,
@@ -143,19 +228,19 @@ export class PixooClient {
 
   /**
    * Push a multi-frame animation to the display.
-   * @param frames - Array of Canvas instances (one per frame).
+   * @param frames - Array of Canvas instances (one per frame). Must be non-empty.
    * @param speed - Milliseconds per frame.
    */
-  async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResponse> {
+  async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResult> {
     if (frames.length === 0) {
-      return { error_code: -1, message: 'No frames provided' };
+      throw new RangeError('pushAnimation requires at least one frame');
     }
     const reset = await this.resetGifId();
-    if (reset.error_code !== 0) return reset;
+    if (!reset.ok) return reset;
     this.picId = (this.picId + 1) % 10000;
-    let lastResponse: PixooResponse = { error_code: -1 };
+    let last: PixooResult = reset; // overwritten on the first iteration — frames is non-empty
     for (let i = 0; i < frames.length; i++) {
-      lastResponse = await this.send('Draw/SendHttpGif', {
+      last = await this.send('Draw/SendHttpGif', {
         PicNum: frames.length,
         PicWidth: frames[0]!.width,
         PicOffset: i,
@@ -163,39 +248,39 @@ export class PixooClient {
         PicSpeed: speed,
         PicData: frames[i]!.toBase64(),
       });
-      if (lastResponse.error_code !== 0) {
+      if (!last.ok) {
         await this.resetGifId();
-        return lastResponse;
+        return last;
       }
     }
-    return lastResponse;
+    return last;
   }
 
   // --- Channel / display control ---
 
-  async getConfig(): Promise<DeviceConfig & PixooResponse> {
-    return this.send('Channel/GetAllConf') as Promise<DeviceConfig & PixooResponse>;
+  async getConfig(): Promise<PixooResult<DeviceConfig>> {
+    return this.send<DeviceConfig>('Channel/GetAllConf');
   }
 
-  async getChannel(): Promise<{ SelectIndex: number } & PixooResponse> {
-    return this.send('Channel/GetIndex') as Promise<{ SelectIndex: number } & PixooResponse>;
+  async getChannel(): Promise<PixooResult<{ SelectIndex: number }>> {
+    return this.send<{ SelectIndex: number }>('Channel/GetIndex');
   }
 
-  async setChannel(channel: Channel): Promise<PixooResponse> {
+  async setChannel(channel: Channel): Promise<PixooResult> {
     return this.send('Channel/SetIndex', { SelectIndex: channel });
   }
 
-  async setBrightness(brightness: number): Promise<PixooResponse> {
+  async setBrightness(brightness: number): Promise<PixooResult> {
     return this.send('Channel/SetBrightness', {
       Brightness: Math.max(0, Math.min(100, Math.round(brightness))),
     });
   }
 
-  async setScreen(on: boolean): Promise<PixooResponse> {
+  async setScreen(on: boolean): Promise<PixooResult> {
     return this.send('Channel/OnOffScreen', { OnOff: on ? 1 : 0 });
   }
 
-  async setClock(clockId: number): Promise<PixooResponse> {
+  async setClock(clockId: number): Promise<PixooResult> {
     return this.send('Channel/SetClockSelectId', { ClockId: clockId });
   }
 
@@ -212,7 +297,7 @@ export class PixooClient {
     speed?: number;
     color?: ColorLike;
     align?: number;
-  }): Promise<PixooResponse> {
+  }): Promise<PixooResult> {
     const rgb = resolveColor(opts.color ?? [255, 255, 255]);
     const hex = rgbToHex(rgb);
     const colorStr = `#${hex.toString(16).padStart(6, '0')}`;
@@ -230,17 +315,17 @@ export class PixooClient {
     });
   }
 
-  async clearText(id: number): Promise<PixooResponse> {
+  async clearText(id: number): Promise<PixooResult> {
     return this.send('Draw/ClearHttpText', { TextId: id });
   }
 
   // --- Tools ---
 
-  async setScoreboard(blue: number, red: number): Promise<PixooResponse> {
+  async setScoreboard(blue: number, red: number): Promise<PixooResult> {
     return this.send('Tools/SetScoreBoard', { BlueScore: blue, RedScore: red });
   }
 
-  async setTimer(minutes: number, seconds: number, start = true): Promise<PixooResponse> {
+  async setTimer(minutes: number, seconds: number, start = true): Promise<PixooResult> {
     return this.send('Tools/SetTimer', {
       Minute: minutes,
       Second: seconds,
@@ -248,18 +333,18 @@ export class PixooClient {
     });
   }
 
-  async setStopwatch(action: 'start' | 'stop' | 'reset'): Promise<PixooResponse> {
+  async setStopwatch(action: 'start' | 'stop' | 'reset'): Promise<PixooResult> {
     const status = action === 'start' ? 1 : action === 'stop' ? 0 : 2;
     return this.send('Tools/SetStopWatch', { Status: status });
   }
 
-  async setNoise(on: boolean): Promise<PixooResponse> {
+  async setNoise(on: boolean): Promise<PixooResult> {
     return this.send('Tools/SetNoiseStatus', { NoiseStatus: on ? 1 : 0 });
   }
 
   // --- System ---
 
-  async playBuzzer(activeCycleMs = 500, offCycleMs = 500, totalMs = 3000): Promise<PixooResponse> {
+  async playBuzzer(activeCycleMs = 500, offCycleMs = 500, totalMs = 3000): Promise<PixooResult> {
     return this.send('Device/PlayBuzzer', {
       ActiveTimeInCycle: activeCycleMs,
       OffTimeInCycle: offCycleMs,
@@ -271,9 +356,7 @@ export class PixooClient {
    * Send a batch of commands in a single request via Draw/CommandList.
    * Note: multi-frame Draw/SendHttpGif calls cannot be batched — use pushAnimation() instead.
    */
-  async batch(
-    commands: Array<{ Command: string; [key: string]: unknown }>,
-  ): Promise<PixooResponse> {
+  async batch(commands: Array<{ Command: string; [key: string]: unknown }>): Promise<PixooResult> {
     return this.send('Draw/CommandList', { CommandList: commands });
   }
 }

@@ -7,6 +7,7 @@ export {
   Color,
   NAMED_COLORS,
   resolveColor,
+  tryResolveColor,
   hslToRgb,
   rgbToHsl,
   rgbToHex,
@@ -31,8 +32,12 @@ export {
 export {
   PixooClient,
   type PixooClientOptions,
-  type PixooResponse,
+  type PixooResult,
+  type PixooFailure,
+  type PixooErrorKind,
   type DeviceConfig,
+  type DiscoveredDevice,
+  unwrap,
   Channel,
 } from './client.js';
 

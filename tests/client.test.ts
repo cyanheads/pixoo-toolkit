@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PixooClient, Channel, type PixooResponse } from '../src/client.js';
+import { PixooClient, Channel, unwrap, type PixooResult } from '../src/client.js';
 import { Canvas } from '../src/canvas.js';
 
 const TEST_IP = '192.168.1.100';
 
-function mockFetch(response: PixooResponse, status = 200) {
+function mockFetch(response: Record<string, unknown>, status = 200) {
   return vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
@@ -64,31 +64,62 @@ describe('PixooClient.send', () => {
     expect(body.Brightness).toBe(50);
   });
 
-  it('returns parsed JSON response', async () => {
+  it('returns ok with the parsed response data', async () => {
     globalThis.fetch = mockFetch({ error_code: 0, Brightness: 100 });
     const client = new PixooClient(TEST_IP);
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(0);
-    expect(res['Brightness']).toBe(100);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.error_code).toBe(0);
+      expect(res.data['Brightness']).toBe(100);
+    }
   });
 
-  it('returns error for non-ok HTTP status', async () => {
+  it('returns a device failure for non-zero error_code', async () => {
+    globalThis.fetch = mockFetch({ error_code: 5 });
+    const client = new PixooClient(TEST_IP);
+    const res = await client.send('Draw/SendHttpGif');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('device');
+      expect(res.deviceCode).toBe(5);
+      expect(res.message).toContain('Draw/SendHttpGif');
+    }
+  });
+
+  it('does not retry device rejections', async () => {
+    const fetchMock = mockFetch({ error_code: 5 });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 10 });
+    const res = await client.send('Channel/GetAllConf');
+    expect(res.ok).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('returns an http failure for non-ok HTTP status', async () => {
     globalThis.fetch = mockFetch({ error_code: 0 }, 500);
     const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(-1);
-    expect(res['message']).toContain('500');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('http');
+      expect(res.status).toBe(500);
+      expect(res.message).toContain('500');
+    }
   });
 
-  it('returns error on network failure', async () => {
+  it('returns a network failure on fetch rejection', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
     const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(-1);
-    expect(res['message']).toContain('ECONNREFUSED');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('network');
+      expect(res.message).toContain('ECONNREFUSED');
+    }
   });
 
-  it('handles timeout via AbortController', async () => {
+  it('returns a timeout failure on AbortError', async () => {
     globalThis.fetch = vi
       .fn()
       .mockRejectedValue(
@@ -96,16 +127,22 @@ describe('PixooClient.send', () => {
       );
     const client = new PixooClient(TEST_IP, { timeout: 100, retries: 0 });
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(-1);
-    expect(res['message']).toBe('Request timed out');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('timeout');
+      expect(res.message).toBe('Request timed out');
+    }
   });
 
-  it('handles unknown error type', async () => {
+  it('handles unknown error type as a network failure', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue('string error');
     const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(-1);
-    expect(res['message']).toBe('Unknown error');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('network');
+      expect(res.message).toBe('Unknown error');
+    }
   });
 
   it('retries on transient failure then succeeds', async () => {
@@ -121,17 +158,32 @@ describe('PixooClient.send', () => {
     });
     const client = new PixooClient(TEST_IP, { retries: 1, retryDelay: 10 });
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(0);
+    expect(res.ok).toBe(true);
     expect(calls).toBe(2);
   });
 
-  it('exhausts retries and returns last error', async () => {
+  it('exhausts retries and returns the last failure', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
     const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 10 });
     const res = await client.send('Channel/GetAllConf');
-    expect(res.error_code).toBe(-1);
-    expect(res['message']).toContain('ECONNREFUSED');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('network');
+      expect(res.message).toContain('ECONNREFUSED');
+    }
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('unwrap', () => {
+  it('returns the data for ok results', () => {
+    const res: PixooResult = { ok: true, data: { error_code: 0, Brightness: 80 } };
+    expect(unwrap(res)['Brightness']).toBe(80);
+  });
+
+  it('throws with kind and message for failures', () => {
+    const res: PixooResult = { ok: false, kind: 'timeout', message: 'Request timed out' };
+    expect(() => unwrap(res)).toThrow('[timeout] Request timed out');
   });
 });
 
@@ -154,6 +206,14 @@ describe('PixooClient convenience methods', () => {
     await client.getConfig();
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body.Command).toBe('Channel/GetAllConf');
+  });
+
+  it('getChannel returns typed SelectIndex data', async () => {
+    globalThis.fetch = mockFetch({ error_code: 0, SelectIndex: 3 });
+    const client = new PixooClient(TEST_IP);
+    const res = await client.getChannel();
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.SelectIndex).toBe(3);
   });
 
   it('setChannel sends correct SelectIndex', async () => {
@@ -297,7 +357,8 @@ describe('PixooClient.push', () => {
     });
 
     const client = new PixooClient(TEST_IP);
-    await client.push(new Canvas());
+    const res = await client.push(new Canvas());
+    expect(res.ok).toBe(true);
     expect(calls[0]).toBe('Draw/ResetHttpGifId');
     expect(calls[1]).toBe('Draw/SendHttpGif');
   });
@@ -326,6 +387,27 @@ describe('PixooClient.push', () => {
     expect(typeof gifCmd['PicID']).toBe('number');
   });
 
+  it('encodes PicData as flattened RGB (device wire format)', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+      bodies.push(JSON.parse(opts.body));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ error_code: 0 }),
+      });
+    });
+
+    const canvas = new Canvas();
+    canvas.setPixel(0, 0, [255, 128, 64]);
+    const client = new PixooClient(TEST_IP);
+    await client.push(canvas);
+
+    const decoded = Buffer.from(bodies[1]!['PicData'] as string, 'base64');
+    expect(decoded.length).toBe(64 * 64 * 3);
+    expect([decoded[0], decoded[1], decoded[2]]).toEqual([255, 128, 64]);
+  });
+
   it('returns the reset failure without sending the frame', async () => {
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
@@ -341,7 +423,11 @@ describe('PixooClient.push', () => {
 
     const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.push(new Canvas());
-    expect(res.error_code).toBe(5);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('device');
+      expect(res.deviceCode).toBe(5);
+    }
     expect(bodies).toHaveLength(1); // no SendHttpGif after a failed reset
   });
 });
@@ -357,11 +443,9 @@ describe('PixooClient.pushAnimation', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('returns error for empty frames', async () => {
+  it('throws RangeError for empty frames', async () => {
     const client = new PixooClient(TEST_IP);
-    const res = await client.pushAnimation([]);
-    expect(res.error_code).toBe(-1);
-    expect(res['message']).toContain('No frames');
+    await expect(client.pushAnimation([])).rejects.toThrow(RangeError);
   });
 
   it('sends each frame sequentially', async () => {
@@ -377,7 +461,8 @@ describe('PixooClient.pushAnimation', () => {
 
     const frames = [new Canvas(), new Canvas(), new Canvas()];
     const client = new PixooClient(TEST_IP);
-    await client.pushAnimation(frames, 80);
+    const res = await client.pushAnimation(frames, 80);
+    expect(res.ok).toBe(true);
 
     // First call: ResetHttpGifId, then 3 SendHttpGif calls
     expect(bodies).toHaveLength(4);
@@ -405,7 +490,7 @@ describe('PixooClient.pushAnimation', () => {
 
     const client = new PixooClient(TEST_IP, { retries: 0 });
     const res = await client.pushAnimation([new Canvas(), new Canvas()]);
-    expect(res.error_code).toBe(5);
+    expect(res.ok).toBe(false);
     expect(bodies).toHaveLength(1);
   });
 
@@ -414,7 +499,7 @@ describe('PixooClient.pushAnimation', () => {
     globalThis.fetch = vi.fn().mockImplementation(() => {
       callCount++;
       // Fail on the second SendHttpGif (3rd call overall: reset, frame0, frame1)
-      const errorCode = callCount === 3 ? -1 : 0;
+      const errorCode = callCount === 3 ? 5 : 0;
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -425,9 +510,49 @@ describe('PixooClient.pushAnimation', () => {
     const frames = [new Canvas(), new Canvas(), new Canvas()];
     const client = new PixooClient(TEST_IP);
     const res = await client.pushAnimation(frames);
-    expect(res.error_code).toBe(-1);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.kind).toBe('device');
     // Should have called: reset, frame0 (ok), frame1 (fail), reset (cleanup) = 4 calls
     expect(callCount).toBe(4);
+  });
+});
+
+describe('PixooClient.discover', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('maps the Divoom DeviceList to typed devices', async () => {
+    const fetchMock = mockFetch({
+      ReturnCode: 0,
+      DeviceList: [
+        { DeviceName: 'Pixoo64', DeviceId: 300012345, DevicePrivateIP: '10.1.20.114' },
+        { DeviceName: 'NoIp', DeviceId: 1 }, // dropped — no usable IP
+      ],
+    });
+    globalThis.fetch = fetchMock;
+
+    const devices = await PixooClient.discover();
+    expect(devices).toEqual([{ name: 'Pixoo64', id: 300012345, ip: '10.1.20.114' }]);
+    const [url, opts] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://app.divoom-gz.com/Device/ReturnSameLANDevice');
+    expect(opts.method).toBe('POST');
+  });
+
+  it('returns an empty array when no devices are found', async () => {
+    globalThis.fetch = mockFetch({ ReturnCode: 0, DeviceList: [] });
+    await expect(PixooClient.discover()).resolves.toEqual([]);
+  });
+
+  it('throws on HTTP failure', async () => {
+    globalThis.fetch = mockFetch({}, 503);
+    await expect(PixooClient.discover()).rejects.toThrow('Discovery failed: HTTP 503');
   });
 });
 
