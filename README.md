@@ -14,6 +14,8 @@ Supports Pixoo-16, Pixoo-32, and Pixoo-64.
 
 ---
 
+> **Building for AI agents?** [`@cyanheads/pixoo-mcp-server`](https://github.com/cyanheads/pixoo-mcp-server) is built on this toolkit — it exposes Pixoo rendering, scene composition, and device control as Model Context Protocol tools.
+
 ## Overview
 
 Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing the Divoom app entirely. Push custom visuals, animations, dashboards, and interactive displays to the RGB LED matrix over your local network. Supports all three Pixoo sizes: 16×16, 32×32, and 64×64.
