@@ -225,13 +225,74 @@ export class Canvas {
     return this;
   }
 
-  /** Draw an arbitrary line (Bresenham). */
+  /**
+   * Draw an arbitrary line (Bresenham).
+   * @throws {RangeError} When any endpoint coordinate is not finite.
+   */
   drawLine(x0: number, y0: number, x1: number, y1: number, color: ColorLike): this {
+    if (![x0, y0, x1, y1].every(Number.isFinite)) {
+      throw new RangeError('drawLine endpoint coordinates must be finite');
+    }
     x0 = Math.floor(x0);
     y0 = Math.floor(y0);
     x1 = Math.floor(x1);
     y1 = Math.floor(y1);
     const c = resolveColor(color);
+
+    if (!this.inBounds(x0, y0) || !this.inBounds(x1, y1)) {
+      const bx0 = BigInt(x0);
+      const by0 = BigInt(y0);
+      const bx1 = BigInt(x1);
+      const by1 = BigInt(y1);
+      const maxX = BigInt(this.width - 1);
+      const maxY = BigInt(this.height - 1);
+      const dx = bx1 >= bx0 ? bx1 - bx0 : bx0 - bx1;
+      const dy = by1 >= by0 ? by1 - by0 : by0 - by1;
+      const sx = bx0 < bx1 ? 1n : -1n;
+      const sy = by0 < by1 ? 1n : -1n;
+
+      let stepStart: bigint;
+      let stepEnd: bigint;
+      if (dx >= dy) {
+        if (dx === 0n) return this;
+        stepStart = sx > 0n ? -bx0 : bx0 - maxX;
+        stepEnd = sx > 0n ? maxX - bx0 : bx0;
+        stepStart = stepStart > 0n ? stepStart : 0n;
+        stepEnd = stepEnd < dx ? stepEnd : dx;
+      } else {
+        stepStart = sy > 0n ? -by0 : by0 - maxY;
+        stepEnd = sy > 0n ? maxY - by0 : by0;
+        stepStart = stepStart > 0n ? stepStart : 0n;
+        stepEnd = stepEnd < dy ? stepEnd : dy;
+      }
+      if (stepStart > stepEnd) return this;
+
+      const major = dx >= dy ? dx : dy;
+      const minor = dx >= dy ? dy : dx;
+      const minorSteps = (stepStart * minor + major / 2n) / major;
+      let cx = bx0 + (dx >= dy ? sx * stepStart : sx * minorSteps);
+      let cy = by0 + (dx >= dy ? sy * minorSteps : sy * stepStart);
+      let err =
+        dx - dy + (dx >= dy ? -stepStart * dy + minorSteps * dx : stepStart * dx - minorSteps * dy);
+
+      for (let step = stepStart; step <= stepEnd; step++) {
+        if (cx >= 0n && cx <= maxX && cy >= 0n && cy <= maxY) {
+          this.setPixel(Number(cx), Number(cy), c);
+        }
+        if (step === stepEnd) break;
+        const e2 = 2n * err;
+        if (e2 >= -dy) {
+          err -= dy;
+          cx += sx;
+        }
+        if (e2 <= dx) {
+          err += dx;
+          cy += sy;
+        }
+      }
+      return this;
+    }
+
     const dx = Math.abs(x1 - x0),
       dy = -Math.abs(y1 - y0);
     const sx = x0 < x1 ? 1 : -1,
@@ -522,14 +583,19 @@ export class Canvas {
 
   // --- Transform ---
 
-  /** Shift all pixels by dx, dy. Vacated pixels become transparent. */
+  /**
+   * Shift all pixels by dx, dy. Finite offsets are floored to integer pixel
+   * coordinates; vacated pixels become transparent.
+   */
   scroll(dx: number, dy: number): this {
+    const offsetX = Math.floor(dx);
+    const offsetY = Math.floor(dy);
     const copy = new Uint8Array(this.buffer);
     this.clear();
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
-        const nx = x + dx,
-          ny = y + dy;
+        const nx = x + offsetX,
+          ny = y + offsetY;
         if (this.inBounds(nx, ny)) {
           const si = (y * this.width + x) * 4;
           const di = (ny * this.width + nx) * 4;

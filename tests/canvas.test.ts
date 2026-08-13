@@ -207,6 +207,67 @@ describe('drawCircle', () => {
 });
 
 describe('drawLine', () => {
+  it.each([
+    ['NaN', 'x0', 0, Number.NaN],
+    ['Infinity', 'x0', 0, Number.POSITIVE_INFINITY],
+    ['-Infinity', 'x0', 0, Number.NEGATIVE_INFINITY],
+    ['NaN', 'y0', 1, Number.NaN],
+    ['Infinity', 'y0', 1, Number.POSITIVE_INFINITY],
+    ['-Infinity', 'y0', 1, Number.NEGATIVE_INFINITY],
+    ['NaN', 'x1', 2, Number.NaN],
+    ['Infinity', 'x1', 2, Number.POSITIVE_INFINITY],
+    ['-Infinity', 'x1', 2, Number.NEGATIVE_INFINITY],
+    ['NaN', 'y1', 3, Number.NaN],
+    ['Infinity', 'y1', 3, Number.POSITIVE_INFINITY],
+    ['-Infinity', 'y1', 3, Number.NEGATIVE_INFINITY],
+  ])('rejects %s at %s without mutation', (_valueName, _endpointName, index, value) => {
+    const c = new Canvas(16);
+    c.setPixel(2, 2, [1, 2, 3], 17);
+    const before = new Uint8Array(c.buffer);
+    const endpoints: [number, number, number, number] = [1, 1, 3, 3];
+    endpoints[index] = value;
+
+    expect(() => c.drawLine(...endpoints, [255, 0, 0])).toThrow(RangeError);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it.each([
+    ['horizontal', [Number.MAX_VALUE, 0, 0, 0]],
+    ['vertical', [0, Number.MAX_VALUE, 0, 0]],
+    ['diagonal', [Number.MAX_VALUE, Number.MAX_VALUE, 0, 0]],
+  ] as const)('clips an intersecting extreme finite %s segment', (_name, endpoints) => {
+    const c = new Canvas(16);
+
+    expect(c.drawLine(...endpoints, [255, 0, 0])).toBe(c);
+
+    expect(c.getPixel(0, 0)).toEqual([255, 0, 0]);
+  });
+
+  it('ignores an entirely off-canvas extreme finite segment', () => {
+    const c = new Canvas(16);
+    c.setPixel(2, 2, [1, 2, 3], 17);
+    const before = new Uint8Array(c.buffer);
+
+    expect(c.drawLine(Number.MAX_VALUE, 16, 0, 16, [255, 0, 0])).toBe(c);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it('ignores an off-canvas extreme finite point', () => {
+    const c = new Canvas(16);
+    const before = new Uint8Array(c.buffer);
+
+    expect(
+      c.drawLine(
+        Number.MAX_VALUE,
+        Number.MAX_VALUE,
+        Number.MAX_VALUE,
+        Number.MAX_VALUE,
+        [255, 0, 0],
+      ),
+    ).toBe(c);
+    expect(c.buffer).toEqual(before);
+  });
+
   it('draws a horizontal line', () => {
     const c = new Canvas();
     c.drawLine(5, 10, 15, 10, [255, 0, 0]);
@@ -235,6 +296,57 @@ describe('drawLine', () => {
     const c = new Canvas();
     c.drawLine(5, 5, 5, 5, [255, 0, 0]);
     expect(c.getPixel(5, 5)).toEqual([255, 0, 0]);
+  });
+
+  it('floors finite fractional endpoints and supports chaining', () => {
+    const fractional = new Canvas(16);
+    const integer = new Canvas(16);
+
+    expect(fractional.drawLine(1.9, 2.9, 5.9, 4.9, [255, 0, 0])).toBe(fractional);
+    integer.drawLine(1, 2, 5, 4, [255, 0, 0]);
+
+    expect(fractional.buffer).toEqual(integer.buffer);
+  });
+
+  it('clips finite out-of-bounds endpoints', () => {
+    const c = new Canvas(16);
+    c.drawLine(-2, 0, 2, 0, [255, 0, 0]);
+
+    expect(c.getPixel(0, 0)).toEqual([255, 0, 0]);
+    expect(c.getPixel(1, 0)).toEqual([255, 0, 0]);
+    expect(c.getPixel(2, 0)).toEqual([255, 0, 0]);
+    expect(c.getPixel(3, 0)).toEqual([0, 0, 0]);
+  });
+
+  it.each([
+    [
+      [-2, 0, 2, 1],
+      [
+        [0, 1],
+        [1, 1],
+        [2, 1],
+      ],
+    ],
+    [
+      [2, 1, -2, 0],
+      [
+        [0, 0],
+        [1, 1],
+        [2, 1],
+      ],
+    ],
+  ] as const)('preserves the clipped Bresenham raster for %j', (endpoints, expectedPixels) => {
+    const c = new Canvas(16);
+
+    c.drawLine(...endpoints, [255, 0, 0]);
+
+    const actualPixels: [number, number][] = [];
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        if (c.getPixelRgba(x, y)[3] !== 0) actualPixels.push([x, y]);
+      }
+    }
+    expect(actualPixels).toEqual(expectedPixels);
   });
 });
 
@@ -447,6 +559,24 @@ describe('gradientRadial', () => {
 });
 
 describe('scroll', () => {
+  it.each([
+    ['positive horizontal', 1.75, 0],
+    ['negative horizontal', -0.25, 0],
+    ['positive vertical', 0, 1.75],
+    ['negative vertical', 0, -0.25],
+  ])('floors %s offsets before shifting pixels', (_name, dx, dy) => {
+    const fractional = new Canvas(16);
+    fractional.setPixel(0, 0, [255, 0, 0]);
+    fractional.setPixel(7, 7, [0, 255, 0], 128);
+    fractional.setPixel(15, 15, [0, 0, 255]);
+    const integer = fractional.clone();
+
+    expect(fractional.scroll(dx, dy)).toBe(fractional);
+    integer.scroll(Math.floor(dx), Math.floor(dy));
+
+    expect(fractional.buffer).toEqual(integer.buffer);
+  });
+
   it('shifts pixels by (dx, dy)', () => {
     const c = new Canvas();
     c.setPixel(10, 10, [255, 0, 0]);
@@ -459,11 +589,11 @@ describe('scroll', () => {
     const c = new Canvas();
     c.clear([128, 128, 128]);
     c.scroll(60, 0);
-    // Pixels 0-59 should be black (vacated)
-    expect(c.getPixel(0, 0)).toEqual([0, 0, 0]);
-    expect(c.getPixel(59, 0)).toEqual([0, 0, 0]);
+    // Pixels 0-59 should be transparent (vacated)
+    expect(c.getPixelRgba(0, 0)).toEqual([0, 0, 0, 0]);
+    expect(c.getPixelRgba(59, 0)).toEqual([0, 0, 0, 0]);
     // Pixels 60-63 should have original content
-    expect(c.getPixel(63, 0)).toEqual([128, 128, 128]);
+    expect(c.getPixelRgba(63, 0)).toEqual([128, 128, 128, 255]);
   });
 });
 

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-08-13
+
+### Fixed
+
+- **canvas:** `scroll()` now floors finite offsets before copying RGBA pixels, preventing fractional offsets from splitting channel bytes across pixels (#14).
+- **canvas:** `drawLine()` rejects `NaN` and infinite endpoints with `RangeError` before mutating the canvas or entering Bresenham rasterization (#17).
+- **canvas:** `drawLine()` bounds finite off-canvas traversal, so extreme segments render their visible pixels or return without mutation instead of hanging (#24).
+- npm repository metadata now uses the canonical `git+https` URL, avoiding publish-time normalization warnings.
+
 ## [0.7.0] — 2026-08-13
 
 ### Added

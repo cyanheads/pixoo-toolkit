@@ -1,12 +1,12 @@
 {
   "name": "@cyanheads/pixoo-toolkit",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "TypeScript toolkit for Divoom Pixoo displays — pixel rendering, animations, and device control",
   "license": "Apache-2.0",
   "author": "Casey Hand (cyanheads)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cyanheads/pixoo-toolkit.git"
+    "url": "git+https://github.com/cyanheads/pixoo-toolkit.git"
   },
   "homepage": "https://github.com/cyanheads/pixoo-toolkit",
   "bugs": {
