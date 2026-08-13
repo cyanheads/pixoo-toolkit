@@ -171,9 +171,9 @@ export async function downsampleSprite(
         darkCount++;
       } else {
         // Quantize to reduce noise from anti-aliasing
-        const qr = Math.round(p.r / 10) * 10;
-        const qg = Math.round(p.g / 10) * 10;
-        const qb = Math.round(p.b / 10) * 10;
+        const qr = Math.min(255, Math.round(p.r / 10) * 10);
+        const qg = Math.min(255, Math.round(p.g / 10) * 10);
+        const qb = Math.min(255, Math.round(p.b / 10) * 10);
         const key = `${qr},${qg},${qb}`;
         const entry = colorCounts.get(key);
         if (entry) {
