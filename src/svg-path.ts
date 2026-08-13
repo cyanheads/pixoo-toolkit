@@ -8,8 +8,8 @@
  *
  * Cubic and quadratic Béziers (C/c, S/s, Q/q, T/t) are flattened by sampling
  * CURVE_SAMPLES points per segment, with smooth-command control-point
- * reflection. Elliptical arcs (A/a) are approximated by a straight line to
- * their endpoint.
+ * reflection. Elliptical arcs (A/a) use adaptive sampling after conversion
+ * from SVG endpoint parameters to center parameters.
  */
 
 import { Canvas } from './canvas.js';
@@ -23,8 +23,65 @@ export interface Point {
 /** Points sampled per Bézier segment — plenty at Pixoo resolutions. */
 const CURVE_SAMPLES = 12;
 
+/** Maximum arc-to-chord deviation in output pixels. */
+const ARC_FLATNESS = 0.25;
+
+/** Bounds parse output for extremely large source-space radii. */
+const MAX_ARC_SAMPLES = 4096;
+
 /** Matches one SVG number, including compact decimals (`.5.5`) and exponents. */
 const NUMBER_RE = /[+-]?(?:\d*\.)?\d+(?:[eE][+-]?\d+)?/g;
+const NUMBER_AT_START_RE = /^[+-]?(?:\d*\.)?\d+(?:[eE][+-]?\d+)?/;
+
+/** Parse arc argument groups while preserving the grammar's one-character flags. */
+function parseArcArgs(input: string): number[] {
+  const args: number[] = [];
+  let offset = 0;
+
+  const skipSeparators = (): void => {
+    while (offset < input.length && (input[offset] === ',' || /\s/.test(input[offset]!))) offset++;
+  };
+  const readNumber = (): number | undefined => {
+    skipSeparators();
+    const match = input.slice(offset).match(NUMBER_AT_START_RE);
+    if (!match) return undefined;
+    offset += match[0].length;
+    return Number(match[0]);
+  };
+  const readFlag = (): number | undefined => {
+    skipSeparators();
+    const value = input[offset];
+    if (value !== '0' && value !== '1') return undefined;
+    offset++;
+    return Number(value);
+  };
+
+  while (offset < input.length) {
+    skipSeparators();
+    if (offset >= input.length) break;
+    const rx = readNumber();
+    const ry = readNumber();
+    const rotation = readNumber();
+    const largeArc = readFlag();
+    const sweep = readFlag();
+    const x = readNumber();
+    const y = readNumber();
+    if (
+      rx === undefined ||
+      ry === undefined ||
+      rotation === undefined ||
+      largeArc === undefined ||
+      sweep === undefined ||
+      x === undefined ||
+      y === undefined
+    ) {
+      break;
+    }
+    args.push(rx, ry, rotation, largeArc, sweep, x, y);
+  }
+
+  return args;
+}
 
 /** Tokenize an SVG path `d` string into commands + coordinate arrays. */
 function tokenize(d: string): Array<{ cmd: string; args: number[] }> {
@@ -32,17 +89,35 @@ function tokenize(d: string): Array<{ cmd: string; args: number[] }> {
   const re = /([MmLlHhVvZzCcSsQqTtAa])([^MmLlHhVvZzCcSsQqTtAa]*)/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(d)) !== null) {
-    tokens.push({ cmd: match[1]!, args: match[2]!.match(NUMBER_RE)?.map(Number) ?? [] });
+    const cmd = match[1]!;
+    const input = match[2]!;
+    tokens.push({
+      cmd,
+      args:
+        cmd === 'A' || cmd === 'a'
+          ? parseArcArgs(input)
+          : (input.match(NUMBER_RE)?.map(Number) ?? []),
+    });
   }
   return tokens;
 }
 
-/**
- * Parse an SVG path into subpaths — one point ring per M/m or Z/z boundary.
- * Rings are NOT explicitly closed unless the path used Z/z; the fill
- * functions close each ring implicitly, per SVG fill semantics.
- */
-export function parseSvgPathSubpaths(d: string): Point[][] {
+function arcSampleCount(
+  sweepAngle: number,
+  rx: number,
+  ry: number,
+  scaleX: number,
+  scaleY: number,
+): number {
+  if (!Number.isFinite(sweepAngle) || sweepAngle === 0) return 1;
+  const radius = Math.max(rx, ry) * Math.max(Math.abs(scaleX), Math.abs(scaleY));
+  if (radius <= ARC_FLATNESS) return 1;
+  if (!Number.isFinite(radius)) return MAX_ARC_SAMPLES;
+  const maxAngle = 4 * Math.asin(Math.sqrt(ARC_FLATNESS / radius / 2));
+  return Math.min(MAX_ARC_SAMPLES, Math.max(1, Math.ceil(Math.abs(sweepAngle) / maxAngle)));
+}
+
+function parseSvgPathSubpathsAtScale(d: string, scaleX: number, scaleY: number): Point[][] {
   const tokens = tokenize(d);
   const subpaths: Point[][] = [];
   let current: Point[] = [];
@@ -100,6 +175,99 @@ export function parseSvgPathSubpaths(d: string): Point[][] {
       current.push({
         x: u * u * x0 + 2 * u * t * x1 + t * t * x2,
         y: u * u * y0 + 2 * u * t * y1 + t * t * y2,
+      });
+    }
+    cx = x2;
+    cy = y2;
+  };
+  const arcTo = (
+    rxInput: number,
+    ryInput: number,
+    rotation: number,
+    largeArc: boolean,
+    sweep: boolean,
+    x2: number,
+    y2: number,
+  ): void => {
+    if (cx === x2 && cy === y2) return;
+
+    let rx = Math.abs(rxInput);
+    let ry = Math.abs(ryInput);
+    if (rx === 0 || ry === 0) {
+      lineTo(x2, y2);
+      return;
+    }
+
+    begin();
+    const x1 = cx;
+    const y1 = cy;
+    const phi = ((rotation % 360) * Math.PI) / 180;
+    const cosPhi = Math.cos(phi);
+    const sinPhi = Math.sin(phi);
+    const halfDx = (x1 - x2) / 2;
+    const halfDy = (y1 - y2) / 2;
+    const x1Prime = cosPhi * halfDx + sinPhi * halfDy;
+    const y1Prime = -sinPhi * halfDx + cosPhi * halfDy;
+
+    // Keep the endpoint/radius ratios finite without changing the ellipse's aspect ratio.
+    const maxNormalizedComponent = Number.MAX_VALUE / 4;
+    const radiusScale = Math.max(
+      1,
+      Math.abs(x1Prime) / (rx * maxNormalizedComponent),
+      Math.abs(y1Prime) / (ry * maxNormalizedComponent),
+    );
+    if (!Number.isFinite(radiusScale)) {
+      lineTo(x2, y2);
+      return;
+    }
+    rx *= radiusScale;
+    ry *= radiusScale;
+
+    let normalizedX = x1Prime / rx;
+    let normalizedY = y1Prime / ry;
+    let normalizedDistance = Math.hypot(normalizedX, normalizedY);
+    if (!Number.isFinite(normalizedDistance) || normalizedDistance === 0) {
+      lineTo(x2, y2);
+      return;
+    }
+    if (normalizedDistance > 1) {
+      rx *= normalizedDistance;
+      ry *= normalizedDistance;
+      normalizedX /= normalizedDistance;
+      normalizedY /= normalizedDistance;
+      normalizedDistance = 1;
+    }
+
+    const centerDirection = largeArc === sweep ? -1 : 1;
+    const centerMagnitude = Math.sqrt(Math.max(0, 1 - Math.min(normalizedDistance, 1) ** 2));
+    const centerXPrime =
+      centerDirection * rx * (normalizedY / normalizedDistance) * centerMagnitude;
+    const centerYPrime =
+      -centerDirection * ry * (normalizedX / normalizedDistance) * centerMagnitude;
+    const centerX = cosPhi * centerXPrime - sinPhi * centerYPrime + (x1 + x2) / 2;
+    const centerY = sinPhi * centerXPrime + cosPhi * centerYPrime + (y1 + y2) / 2;
+
+    const startX = (x1Prime - centerXPrime) / rx;
+    const startY = (y1Prime - centerYPrime) / ry;
+    const endX = (-x1Prime - centerXPrime) / rx;
+    const endY = (-y1Prime - centerYPrime) / ry;
+    const startAngle = Math.atan2(startY, startX);
+    let sweepAngle = Math.atan2(startX * endY - startY * endX, startX * endX + startY * endY);
+    if (!sweep && sweepAngle > 0) sweepAngle -= Math.PI * 2;
+    if (sweep && sweepAngle < 0) sweepAngle += Math.PI * 2;
+
+    const samples = arcSampleCount(sweepAngle, rx, ry, scaleX, scaleY);
+    for (let sample = 1; sample <= samples; sample++) {
+      if (sample === samples) {
+        current.push({ x: x2, y: y2 });
+        continue;
+      }
+      const angle = startAngle + (sweepAngle * sample) / samples;
+      const cosAngle = Math.cos(angle);
+      const sinAngle = Math.sin(angle);
+      current.push({
+        x: centerX + rx * cosAngle * cosPhi - ry * sinAngle * sinPhi,
+        y: centerY + rx * cosAngle * sinPhi + ry * sinAngle * cosPhi,
       });
     }
     cx = x2;
@@ -219,12 +387,19 @@ export function parseSvgPathSubpaths(d: string): Point[][] {
         }
         break;
       }
-      // Arc — approximated by a straight line to the endpoint (7 params per arc)
       case 'A':
       case 'a': {
         const abs = cmd === 'A';
         for (let i = 0; i + 6 < args.length; i += 7) {
-          lineTo(abs ? args[i + 5]! : cx + args[i + 5]!, abs ? args[i + 6]! : cy + args[i + 6]!);
+          arcTo(
+            args[i]!,
+            args[i + 1]!,
+            args[i + 2]!,
+            args[i + 3] === 1,
+            args[i + 4] === 1,
+            abs ? args[i + 5]! : cx + args[i + 5]!,
+            abs ? args[i + 6]! : cy + args[i + 6]!,
+          );
         }
         break;
       }
@@ -238,6 +413,15 @@ export function parseSvgPathSubpaths(d: string): Point[][] {
   endSubpath();
 
   return subpaths;
+}
+
+/**
+ * Parse an SVG path into subpaths — one point ring per M/m or Z/z boundary.
+ * Rings are NOT explicitly closed unless the path used Z/z; the fill
+ * functions close each ring implicitly, per SVG fill semantics.
+ */
+export function parseSvgPathSubpaths(d: string): Point[][] {
+  return parseSvgPathSubpathsAtScale(d, 1, 1);
 }
 
 /**
@@ -320,10 +504,10 @@ export function renderSvgPath(
   svgViewBox: [number, number] = [16, 16],
   targetRect?: [number, number, number, number],
 ): void {
-  const subpaths = parseSvgPathSubpaths(d);
   const [tx, ty, tw, th] = targetRect ?? [0, 0, canvas.width, canvas.height];
   const [vw, vh] = svgViewBox;
   if (vw === 0 || vh === 0) return;
+  const subpaths = parseSvgPathSubpathsAtScale(d, tw / vw, th / vh);
 
   const scaled = subpaths.map((ring) =>
     ring.map((p) => ({

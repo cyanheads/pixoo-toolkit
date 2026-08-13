@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.7] — 2026-08-13
+
+### Fixed
+
+- **svg-path:** `A` and `a` commands now rasterize SVG elliptical arcs with radius correction, rotation, sweep selection, compact flag parsing, and scale-aware sampling instead of collapsing to endpoint chords (#21).
+
 ## [0.7.6] — 2026-08-13
 
 ### Fixed

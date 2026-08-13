@@ -126,20 +126,141 @@ describe('parseSvgPath', () => {
     expect(points.at(-1)).toEqual({ x: 20, y: 10 });
   });
 
-  it('parses absolute arc A (line to endpoint)', () => {
+  it('samples an absolute arc A and preserves its endpoint', () => {
     const points = parseSvgPath('M0 0 A10 10 0 0 1 20 20');
-    expect(points).toEqual([
-      { x: 0, y: 0 },
-      { x: 20, y: 20 },
+    expect(points.length).toBeGreaterThan(2);
+    expect(points[0]).toEqual({ x: 0, y: 0 });
+    expect(points.at(-1)).toEqual({ x: 20, y: 20 });
+    expect(points.slice(1, -1).some((point) => point.x !== point.y)).toBe(true);
+  });
+
+  it('samples a relative arc a to the correct endpoint', () => {
+    const points = parseSvgPath('M10 10 a5 5 0 0 1 10 10');
+    expect(points.length).toBeGreaterThan(2);
+    expect(points[0]).toEqual({ x: 10, y: 10 });
+    expect(points.at(-1)).toEqual({ x: 20, y: 20 });
+  });
+
+  it('parses repeated arc segments', () => {
+    const points = parseSvgPath('M0 0 A5 5 0 0 1 10 0 5 5 0 0 1 20 0');
+    expect(points.at(-1)).toEqual({ x: 20, y: 0 });
+    expect(points.some((point) => point.x < 10 && point.y < 0)).toBe(true);
+    expect(points.some((point) => point.x > 10 && point.y < 0)).toBe(true);
+  });
+
+  it('parses compact one-character arc flags', () => {
+    const points = parseSvgPath('M0 0 A10 10 0 0110 20');
+    expect(points.length).toBeGreaterThan(2);
+    expect(points.at(-1)).toEqual({ x: 10, y: 20 });
+  });
+
+  it('parses compact arc flags before signed endpoint coordinates', () => {
+    expect(parseSvgPath('M0 0 A10 10 0 01-10-20').at(-1)).toEqual({ x: -10, y: -20 });
+  });
+
+  it('honors the large-arc flag', () => {
+    const small = parseSvgPath('M0 0 A10 10 0 0 1 10 0');
+    const large = parseSvgPath('M0 0 A10 10 0 1 1 10 0');
+    expect(large.length).toBeGreaterThan(small.length);
+    expect(Math.min(...large.map((point) => point.y))).toBeLessThan(
+      Math.min(...small.map((point) => point.y)),
+    );
+  });
+
+  it('honors the sweep flag', () => {
+    const increasing = parseSvgPath('M0 0 A10 10 0 0 1 20 0');
+    const decreasing = parseSvgPath('M0 0 A10 10 0 0 0 20 0');
+    expect(Math.min(...increasing.map((point) => point.y))).toBeCloseTo(-10, 5);
+    expect(Math.max(...decreasing.map((point) => point.y))).toBeCloseTo(10, 5);
+  });
+
+  it('honors x-axis rotation', () => {
+    const unrotated = parseSvgPath('M0 0 A12 6 0 0 1 16 8');
+    const rotated = parseSvgPath('M0 0 A12 6 45 0 1 16 8');
+    const unrotatedMid = unrotated[Math.floor(unrotated.length / 2)]!;
+    const rotatedMid = rotated[Math.floor(rotated.length / 2)]!;
+    expect(rotatedMid.x).not.toBeCloseTo(unrotatedMid.x, 2);
+    expect(rotatedMid.y).not.toBeCloseTo(unrotatedMid.y, 2);
+    expect(rotated.at(-1)).toEqual({ x: 16, y: 8 });
+  });
+
+  it('scales radii that are too small to connect the endpoints', () => {
+    const points = parseSvgPath('M0 0 A1 1 0 0 1 10 0');
+    expect(Math.min(...points.map((point) => point.y))).toBeLessThanOrEqual(-4.75);
+    expect(points.at(-1)).toEqual({ x: 10, y: 0 });
+  });
+
+  it('scales subnormal radii without collapsing the arc to a chord', () => {
+    const points = parseSvgPath('M0 0 A1e-320 1e-320 0 0 1 10 0');
+    expect(points.length).toBeGreaterThan(2);
+    expect(points.length).toBeLessThanOrEqual(4097);
+    expect(points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(
+      true,
+    );
+    expect(points.at(-1)).toEqual({ x: 10, y: 0 });
+  });
+
+  it('treats negative radii as positive', () => {
+    const positive = parseSvgPath('M0 0 A10 5 20 0 1 15 10');
+    const negative = parseSvgPath('M0 0 A-10 -5 20 0 1 15 10');
+    expect(negative).toEqual(positive);
+  });
+
+  it('renders a zero-radius arc as a line', () => {
+    expect(parseSvgPath('M2 3 A0 5 30 1 1 8 9')).toEqual([
+      { x: 2, y: 3 },
+      { x: 8, y: 9 },
     ]);
   });
 
-  it('parses relative arc a', () => {
-    const points = parseSvgPath('M10 10 a5 5 0 0 1 10 10');
-    expect(points).toEqual([
-      { x: 10, y: 10 },
-      { x: 20, y: 20 },
-    ]);
+  it('omits an arc whose endpoint equals the current point', () => {
+    expect(parseSvgPath('M2 3 A5 5 0 1 1 2 3')).toEqual([{ x: 2, y: 3 }]);
+  });
+
+  it('keeps the current point after omitting an identical-endpoint relative arc', () => {
+    expect(parseSvgPath('M2 3 a5 5 0 1 1 0 0 l1 2').at(-1)).toEqual({ x: 3, y: 5 });
+  });
+
+  it('produces deterministic source-space arc samples', () => {
+    expect(parseSvgPath('M0 0 A12 7 30 1 0 20 4')).toHaveLength(11);
+  });
+
+  it('preserves the endpoint for an extremely large finite radius', () => {
+    const points = parseSvgPath('M0 0 A1e100 1e100 0 0 1 1 0');
+    expect(points).toHaveLength(2);
+    expect(points.at(-1)).toEqual({ x: 1, y: 0 });
+    expect(points.length).toBeLessThanOrEqual(4097);
+  });
+
+  it('does not oversample a huge-radius small arc', () => {
+    const points = parseSvgPath('M0 0 A1e16 1e16 0 0 1 1 0');
+    expect(points).toHaveLength(2);
+    expect(points.at(-1)).toEqual({ x: 1, y: 0 });
+  });
+
+  it('samples an extremely large finite-radius large arc without overflow', () => {
+    const points = parseSvgPath('M0 0 A1e100 1e100 0 1 1 1 0');
+    expect(points.length).toBeGreaterThan(2);
+    expect(points.length).toBeLessThanOrEqual(4097);
+    expect(points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(
+      true,
+    );
+    expect(points.at(-1)).toEqual({ x: 1, y: 0 });
+  });
+
+  it.each([String(Number.MAX_VALUE), '1e999'])(
+    'keeps extreme radius sampling bounded for %s',
+    (radius) => {
+      const points = parseSvgPath(`M0 0 A${radius} ${radius} 0 0 1 1 0`);
+      expect(points.at(-1)).toEqual({ x: 1, y: 0 });
+      expect(points.length).toBeLessThanOrEqual(4097);
+    },
+  );
+
+  it('resets cubic smooth-control reflection after an arc', () => {
+    const chained = parseSvgPath('M0 0 C0 8 8 8 8 0 A4 4 0 0 1 16 0 S20 4 24 0');
+    const standalone = parseSvgPath('M16 0 S20 4 24 0');
+    expect(chained.slice(-standalone.length)).toEqual(standalone);
   });
 
   it('falls back to the current point for S with no preceding curve', () => {
@@ -277,6 +398,41 @@ describe('renderSvgPath', () => {
       }
     }
     expect(anySet).toBe(false);
+  });
+
+  it.each([16, 32, 64] as const)('renders an arc circle at %d pixels', (size) => {
+    const c = new Canvas(size);
+    renderSvgPath(c, 'M1 0 A1 1 0 0 1 1 2 A1 1 0 0 1 1 0 Z', [255, 0, 0], [2, 2]);
+
+    expect(c.getPixel(size / 2, size / 2)).toEqual([255, 0, 0]);
+    expect(c.getPixel(Math.round(size * 0.78), Math.round(size * 0.13))).toEqual([255, 0, 0]);
+    expect(c.getPixel(0, 0)).toEqual([0, 0, 0]);
+  });
+
+  it('increases arc sampling for the target render scale', () => {
+    const path = 'M1 0 A1 1 0 0 1 1 2 A1 1 0 0 1 1 0 Z';
+    expect(parseSvgPathSubpaths(path)[0]).toHaveLength(8);
+
+    const c = new Canvas();
+    renderSvgPath(c, path, [255, 0, 0], [2, 2]);
+    expect(c.getPixel(28, 0)).toEqual([255, 0, 0]);
+  });
+
+  it('renders an arc-based even-odd hole', () => {
+    const c = new Canvas();
+    renderSvgPath(
+      c,
+      [
+        'M32 4 A28 28 0 0 1 32 60 A28 28 0 0 1 32 4 Z',
+        'M32 20 A12 12 0 0 1 32 44 A12 12 0 0 1 32 20 Z',
+      ].join(' '),
+      [0, 255, 0],
+      [64, 64],
+    );
+
+    expect(c.getPixel(32, 32)).toEqual([0, 0, 0]);
+    expect(c.getPixel(12, 32)).toEqual([0, 255, 0]);
+    expect(c.getPixel(0, 0)).toEqual([0, 0, 0]);
   });
 });
 

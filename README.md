@@ -30,7 +30,7 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 | **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success |
 | **Image Loading** | Alpha-preserving resize to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
-| **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves) and rasterize with even-odd scanline fill — multi-subpath holes |
+| **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves and elliptical arcs) and rasterize with even-odd scanline fill — multi-subpath holes |
 | **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling |
 
 ## Getting Started
