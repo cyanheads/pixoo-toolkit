@@ -196,13 +196,51 @@ describe('drawRect', () => {
 });
 
 describe('drawCircle', () => {
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects %s radius without mutation', (_name, radius) => {
+    const c = new Canvas(16);
+    c.setPixel(2, 2, [1, 2, 3], 17);
+    const before = new Uint8Array(c.buffer);
+
+    expect(() => c.drawCircle(8, 8, radius, [255, 0, 0])).toThrow(RangeError);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it('validates the radius before resolving the color', () => {
+    const c = new Canvas(16);
+
+    expect(() => c.drawCircle(8, 8, Number.NaN, 'not-a-color')).toThrow(
+      new RangeError('drawCircle radius must be finite'),
+    );
+  });
+
   it('draws a circle outline', () => {
     const c = new Canvas();
-    c.drawCircle(32, 32, 10, [0, 0, 255]);
+    expect(c.drawCircle(32, 32, 10, [0, 0, 255])).toBe(c);
     // Top of circle should be set
     expect(c.getPixel(32, 22)).toEqual([0, 0, 255]);
     // Center should not be set
     expect(c.getPixel(32, 32)).toEqual([0, 0, 0]);
+  });
+
+  it('draws a zero-radius circle as one pixel', () => {
+    const c = new Canvas(16);
+
+    expect(c.drawCircle(8, 8, 0, [255, 0, 0])).toBe(c);
+    expect(c.getPixelRgba(8, 8)).toEqual([255, 0, 0, 255]);
+    expect(c.buffer.filter((value, index) => index % 4 === 3 && value !== 0)).toHaveLength(1);
+  });
+
+  it('treats a negative finite radius as a no-op', () => {
+    const c = new Canvas(16);
+    c.setPixel(2, 2, [1, 2, 3], 17);
+    const before = new Uint8Array(c.buffer);
+
+    expect(c.drawCircle(8, 8, -1, [255, 0, 0])).toBe(c);
+    expect(c.buffer).toEqual(before);
   });
 });
 

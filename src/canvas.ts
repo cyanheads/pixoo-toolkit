@@ -199,8 +199,14 @@ export class Canvas {
     return this;
   }
 
-  /** Draw a circle outline (Bresenham's midpoint algorithm). */
+  /**
+   * Draw a circle outline (Bresenham's midpoint algorithm).
+   * @throws {RangeError} When the radius is not finite.
+   */
   drawCircle(cx: number, cy: number, radius: number, color: ColorLike): this {
+    if (!Number.isFinite(radius)) {
+      throw new RangeError('drawCircle radius must be finite');
+    }
     const c = resolveColor(color);
     let x = radius,
       y = 0,
