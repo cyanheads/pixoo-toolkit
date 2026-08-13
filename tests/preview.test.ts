@@ -1,6 +1,44 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { canvasToPng, encodeAnimationGif } from '../src/preview.js';
+import { canvasToPng, encodeAnimationGif, saveAnimationGif } from '../src/preview.js';
 import { Canvas } from '../src/canvas.js';
+
+function readGifDimensions(gif: Uint8Array): {
+  screen: [number, number];
+  frames: Array<[number, number]>;
+} {
+  const readU16 = (offset: number) => gif[offset]! | (gif[offset + 1]! << 8);
+  const screen: [number, number] = [readU16(6), readU16(8)];
+  const frames: Array<[number, number]> = [];
+  const globalTableSize = gif[10]! & 0x80 ? 3 * 2 ** ((gif[10]! & 0x07) + 1) : 0;
+  let offset = 13 + globalTableSize;
+
+  const skipSubBlocks = (): void => {
+    while (gif[offset] !== 0) offset += gif[offset]! + 1;
+    offset++;
+  };
+
+  while (offset < gif.length) {
+    const marker = gif[offset++]!;
+    if (marker === 0x3b) break;
+    if (marker === 0x21) {
+      offset++; // extension label
+      skipSubBlocks();
+      continue;
+    }
+    if (marker !== 0x2c) throw new Error(`Unexpected GIF block marker 0x${marker.toString(16)}`);
+
+    frames.push([readU16(offset + 4), readU16(offset + 6)]);
+    const localTableSize = gif[offset + 8]! & 0x80 ? 3 * 2 ** ((gif[offset + 8]! & 0x07) + 1) : 0;
+    offset += 9 + localTableSize;
+    offset++; // LZW minimum code size
+    skipSubBlocks();
+  }
+
+  return { screen, frames };
+}
 
 describe('canvasToPng', () => {
   it('produces valid PNG signature', () => {
@@ -90,5 +128,72 @@ describe('encodeAnimationGif', () => {
     expect(gif[6]! | (gif[7]! << 8)).toBe(64);
     expect(gif[8]! | (gif[9]! << 8)).toBe(64);
     expect(gif.at(-1)).toBe(0x3b);
+  });
+
+  it.each([
+    [16, 64, 1],
+    [64, 16, 1],
+    [16, 64, 2],
+    [64, 16, 2],
+  ] as const)('rejects mixed %i then %i frames at scale %i', (firstSize, secondSize, scale) => {
+    const encode = () =>
+      encodeAnimationGif([new Canvas(firstSize), new Canvas(secondSize)], 100, scale);
+    expect(encode).toThrow(RangeError);
+    expect(encode).toThrow(
+      `Animation frame 1 is ${secondSize}x${secondSize}; expected ${firstSize}x${firstSize}`,
+    );
+  });
+
+  it.each([
+    [16, 1],
+    [16, 2],
+    [32, 1],
+    [32, 2],
+    [64, 1],
+    [64, 2],
+  ] as const)('keeps %i frame dimensions at scale %i', (size, scale) => {
+    const gif = encodeAnimationGif([new Canvas(size), new Canvas(size)], 100, scale);
+    const dimensions = readGifDimensions(gif);
+    const expected = size * scale;
+
+    expect(dimensions.screen).toEqual([expected, expected]);
+    expect(dimensions.frames).toEqual([
+      [expected, expected],
+      [expected, expected],
+    ]);
+  });
+
+  it('keeps the existing empty-frame error', () => {
+    expect(() => encodeAnimationGif([], 100, 1)).toThrow(
+      new Error('encodeAnimationGif requires at least one frame'),
+    );
+  });
+
+  it('does not create a destination for mixed-size frames', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pixoo-toolkit-gif-'));
+    const path = join(directory, 'animation.gif');
+    try {
+      await expect(
+        saveAnimationGif([new Canvas(16), new Canvas(64)], path, 100, 1),
+      ).rejects.toThrow('Animation frame 1 is 64x64; expected 16x16');
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it('does not overwrite a destination for mixed-size frames', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pixoo-toolkit-gif-'));
+    const path = join(directory, 'animation.gif');
+    const original = Buffer.from('existing file');
+    try {
+      await writeFile(path, original);
+      await expect(
+        saveAnimationGif([new Canvas(16), new Canvas(64)], path, 100, 2),
+      ).rejects.toThrow('Animation frame 1 is 64x64; expected 16x16');
+      expect(await readFile(path)).toEqual(original);
+    } finally {
+      await rm(directory, { recursive: true });
+    }
   });
 });

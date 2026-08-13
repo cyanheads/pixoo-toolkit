@@ -1,5 +1,18 @@
 import { Canvas, type PixooSize } from './canvas.js';
 
+/** @internal Validate that every frame matches the first frame's dimensions. */
+export function assertAnimationFrameDimensions(frames: readonly Canvas[]): void {
+  const first = frames[0]!;
+  for (let i = 1; i < frames.length; i++) {
+    const frame = frames[i]!;
+    if (frame.width !== first.width || frame.height !== first.height) {
+      throw new RangeError(
+        `Animation frame ${i} is ${frame.width}x${frame.height}; expected ${first.width}x${first.height}`,
+      );
+    }
+  }
+}
+
 /**
  * Multi-frame animation builder.
  *

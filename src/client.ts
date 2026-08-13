@@ -1,5 +1,6 @@
 import { Canvas, type PixooSize, DEFAULT_SIZE } from './canvas.js';
 import { type ColorLike, resolveColor, rgbToHex } from './color.js';
+import { assertAnimationFrameDimensions } from './animation.js';
 
 /**
  * Why a client call failed. Network failures and timeouts are retryable;
@@ -233,13 +234,14 @@ export class PixooClient {
 
   /**
    * Push a multi-frame animation to the display.
-   * @param frames - Array of Canvas instances (one per frame). Must be non-empty.
+   * @param frames - Non-empty array of equal-size Canvas instances (one per frame).
    * @param speed - Milliseconds per frame.
    */
   async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResult> {
     if (frames.length === 0) {
       throw new RangeError('pushAnimation requires at least one frame');
     }
+    assertAnimationFrameDimensions(frames);
     const reset = await this.resetGifId();
     if (!reset.ok) return reset;
     this.picId = (this.picId + 1) % 10000;

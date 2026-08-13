@@ -106,6 +106,8 @@ const anim = buildAnimation(20, 120, (frame, i, total) => {
 await device.pushAnimation(anim.frames, anim.speed);
 ```
 
+Animation frames passed to `pushAnimation()`, `encodeAnimationGif()`, or `saveAnimationGif()` must all have the same dimensions.
+
 ### Loading Images
 
 ```typescript

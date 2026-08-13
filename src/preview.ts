@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import * as gifencNs from 'gifenc';
+import { assertAnimationFrameDimensions } from './animation.js';
 import { Canvas } from './canvas.js';
 
 // gifenc is CJS with no exports map. Node resolves the CJS build and wraps it as a
@@ -180,6 +181,7 @@ export function encodeAnimationGif(
 ): Uint8Array {
   const first = frames[0];
   if (!first) throw new Error('encodeAnimationGif requires at least one frame');
+  assertAnimationFrameDimensions(frames);
 
   const w = first.width * scale;
   const h = first.height * scale;

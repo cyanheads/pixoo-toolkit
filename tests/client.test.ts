@@ -522,8 +522,59 @@ describe('PixooClient.pushAnimation', () => {
 
   it('throws RangeError for empty frames', async () => {
     const client = new PixooClient(TEST_IP);
-    await expect(client.pushAnimation([])).rejects.toThrow(RangeError);
+    const promise = client.pushAnimation([]);
+    await expect(promise).rejects.toThrow(RangeError);
+    await expect(promise).rejects.toThrow('pushAnimation requires at least one frame');
   });
+
+  it.each([
+    [16, 64],
+    [64, 16],
+  ] as const)(
+    'rejects mixed %i then %i frames before making a request',
+    async (firstSize, secondSize) => {
+      const fetchMock = mockFetch({ error_code: 0 });
+      globalThis.fetch = fetchMock;
+      const client = new PixooClient(TEST_IP, { retries: 0 });
+
+      const promise = client.pushAnimation([new Canvas(firstSize), new Canvas(secondSize)]);
+      await expect(promise).rejects.toThrow(RangeError);
+      await expect(promise).rejects.toThrow(
+        `Animation frame 1 is ${secondSize}x${secondSize}; expected ${firstSize}x${firstSize}`,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports the first mismatch in a longer frame sequence', async () => {
+    const fetchMock = mockFetch({ error_code: 0 });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+
+    const promise = client.pushAnimation([new Canvas(16), new Canvas(32), new Canvas(64)]);
+    await expect(promise).rejects.toThrow('Animation frame 1 is 32x32; expected 16x16');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([16, 32, 64] as const)(
+    'keeps %i frame dimensions in every device request',
+    async (size) => {
+      const bodies: Record<string, unknown>[] = [];
+      globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+        bodies.push(JSON.parse(opts.body));
+        return Promise.resolve(mockResponse({ error_code: 0 }));
+      });
+
+      const client = new PixooClient(TEST_IP, { retries: 0 });
+      await client.pushAnimation([new Canvas(size), new Canvas(size)]);
+
+      expect(bodies).toHaveLength(3);
+      for (const body of bodies.slice(1)) {
+        expect(body['PicWidth']).toBe(size);
+        expect(Buffer.from(body['PicData'] as string, 'base64')).toHaveLength(size * size * 3);
+      }
+    },
+  );
 
   it('sends each frame sequentially', async () => {
     const bodies: Record<string, unknown>[] = [];
