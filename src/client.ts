@@ -2,9 +2,9 @@ import { Canvas, type PixooSize, DEFAULT_SIZE } from './canvas.js';
 import { type ColorLike, resolveColor, rgbToHex } from './color.js';
 
 /**
- * Why a client call failed. Transport kinds ('network', 'timeout', 'http')
- * are generally retryable; 'device' means the Pixoo received the command
- * and rejected it.
+ * Why a client call failed. Network failures and timeouts are retryable;
+ * HTTP retryability depends on the status. 'device' means the Pixoo received
+ * the command and rejected it.
  */
 export type PixooErrorKind = 'network' | 'timeout' | 'http' | 'device';
 
@@ -86,6 +86,8 @@ export interface PixooClientOptions {
   retryDelay?: number;
 }
 
+const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
 /**
  * HTTP client for a Divoom Pixoo device.
  *
@@ -142,15 +144,18 @@ export class PixooClient {
   }
 
   /**
-   * Send a raw command. Retries transient transport failures with
-   * exponential backoff; device rejections (non-zero error_code) are
-   * returned immediately — retrying a rejected command won't change it.
+   * Send a raw command. The positional command overrides a top-level
+   * `params.Command`; all other parameters are sent unchanged.
+   *
+   * Retries network failures, timeouts, and HTTP 408, 429, 500, 502, 503,
+   * and 504 with exponential backoff. Other HTTP failures and device
+   * rejections (non-zero error_code) are returned immediately.
    */
   async send<T = Record<string, unknown>>(
     command: string,
     params: Record<string, unknown> = {},
   ): Promise<PixooResult<T>> {
-    const body = JSON.stringify({ Command: command, ...params });
+    const body = JSON.stringify({ ...params, Command: command });
     let lastFailure: PixooFailure = { ok: false, kind: 'network', message: 'No attempts made' };
 
     for (let attempt = 0; attempt <= this.retries; attempt++) {
@@ -173,6 +178,7 @@ export class PixooClient {
             status: res.status,
             message: `HTTP ${res.status} ${res.statusText}`,
           };
+          if (!RETRYABLE_HTTP_STATUSES.has(res.status)) return lastFailure;
           continue;
         }
         const json = (await res.json()) as { error_code: number } & Record<string, unknown>;
