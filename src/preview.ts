@@ -1,18 +1,19 @@
 import { writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import * as gifencNs from 'gifenc';
+import { Canvas } from './canvas.js';
+
 // gifenc is CJS with no exports map. Node resolves the CJS build and wraps it as a
 // default-only ESM import; Bun resolves the `module` field (ESM build) with named
 // exports at top level. The default-unwrap below handles the Node CJS interop path
 // (default is the module object) while the fallback covers Bun / bundler ESM paths
 // (named exports live directly on the namespace, default is the GIFEncoder function).
-const _gifenc =
-  typeof (gifencNs as { default?: unknown }).default === 'object' &&
-  (gifencNs as { default?: typeof gifencNs }).default !== null
-    ? (gifencNs as { default?: typeof gifencNs }).default!
+const defaultExport = (gifencNs as typeof gifencNs & { default?: unknown }).default;
+const gifenc =
+  typeof defaultExport === 'object' && defaultExport !== null
+    ? (defaultExport as typeof gifencNs)
     : gifencNs;
-const { GIFEncoder, quantize, applyPalette } = _gifenc;
-import { Canvas } from './canvas.js';
+const { GIFEncoder, quantize, applyPalette } = gifenc;
 
 /**
  * Zero-dependency PNG encoder (only uses node:zlib for DEFLATE).
@@ -22,6 +23,7 @@ import { Canvas } from './canvas.js';
  */
 
 const TEXT_ENCODER = new TextEncoder();
+const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
 function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
@@ -56,16 +58,11 @@ function makeChunk(type: string, data: Uint8Array): Uint8Array {
   writeU32BE(chunk, 0, data.length);
   chunk.set(typeBytes, 4);
   chunk.set(data, 8);
-  const crcInput = new Uint8Array(4 + data.length);
-  crcInput.set(typeBytes, 0);
-  crcInput.set(data, 4);
-  writeU32BE(chunk, 8 + data.length, crc32(crcInput));
+  writeU32BE(chunk, 8 + data.length, crc32(chunk.subarray(4, 8 + data.length)));
   return chunk;
 }
 
 function encodePng(width: number, height: number, rgb: Uint8Array): Uint8Array {
-  const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-
   // IHDR
   const ihdr = new Uint8Array(13);
   writeU32BE(ihdr, 0, width);
@@ -161,9 +158,9 @@ function rgbToRgba(rgb: Uint8Array): Uint8Array {
   for (let i = 0; i < pixelCount; i++) {
     const si = i * 3;
     const di = i * 4;
-    rgba[di] = rgb[si] ?? 0;
-    rgba[di + 1] = rgb[si + 1] ?? 0;
-    rgba[di + 2] = rgb[si + 2] ?? 0;
+    rgba[di] = rgb[si]!;
+    rgba[di + 1] = rgb[si + 1]!;
+    rgba[di + 2] = rgb[si + 2]!;
     rgba[di + 3] = 255;
   }
   return rgba;

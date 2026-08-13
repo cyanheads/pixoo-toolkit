@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/pixoo-toolkit",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "TypeScript toolkit for Divoom Pixoo displays — pixel rendering, animations, and device control",
   "license": "Apache-2.0",
   "author": "Casey Hand (cyanheads)",
@@ -35,7 +35,14 @@
   },
   "scripts": {
     "build": "bun run tsc",
-    "prepublishOnly": "bun run build",
+    "clean": "bun run scripts/clean.ts",
+    "rebuild": "bun run clean && bun run build",
+    "typecheck": "bun run tsc --noEmit",
+    "docs:check": "bun run scripts/check-docs-sync.ts",
+    "devcheck": "bun run typecheck && bun run lint && bun run format:check && bun run docs:check",
+    "check": "bun run devcheck && bun run test",
+    "test:all": "bun run rebuild && bun run test",
+    "prepublishOnly": "bun run devcheck && bun run test:all",
     "dev": "bun run tsc --watch",
     "demo": "bun run build && bun dist/scripts/demo.js",
     "test": "vitest run",
@@ -52,15 +59,15 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/bun": "^1.3.9",
-    "eslint": "^10.0.0",
-    "prettier": "^3.8.1",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.0",
-    "vitest": "^4.0.18"
+    "@types/bun": "^1.3.14",
+    "eslint": "^10.8.1",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "gifenc": "^1.0.3",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.3"
   }
 }

@@ -1,0 +1,51 @@
+name: Feature Request
+description: Suggest a new feature or improvement for @cyanheads/pixoo-toolkit
+labels: ["enhancement"]
+assignees: ["cyanheads"]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What problem does this solve, and who benefits?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-api
+    attributes:
+      label: Proposed API
+      description: Show the consumer-facing TypeScript API or behavior when possible.
+      render: typescript
+    validations:
+      required: true
+
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Subsystem
+      options:
+        - Canvas and drawing
+        - Color
+        - Bitmap fonts
+        - Image and sprites
+        - Animation
+        - PNG or GIF export
+        - SVG paths
+        - PixooClient
+        - Packaging or developer experience
+        - New subsystem
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What you tried or considered instead, and why it fell short.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Related issues, prior art, links, or other relevant details.

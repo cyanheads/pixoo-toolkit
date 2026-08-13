@@ -8,7 +8,7 @@
 Pixel rendering, animations, and device control over the local HTTP API.\
 Supports Pixoo-16, Pixoo-32, and Pixoo-64.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
 
@@ -37,7 +37,7 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 
 ### Prerequisites
 
-- **Bun** >= 1.3
+- **Bun** >= 1.3 or **Node.js** >= 20.9
 - **Divoom Pixoo** (16, 32, or 64) on the same network
 
 ### Install
@@ -56,8 +56,8 @@ bun add @cyanheads/pixoo-toolkit
 git clone https://github.com/cyanheads/pixoo-toolkit.git
 cd pixoo-toolkit
 bun install
-bun run build
-bun run test
+bun run devcheck
+bun run test:all
 ```
 
 > **Tip:** Set `PIXOO_IP` to your device's local IP address. Set `PIXOO_SIZE` to `16` or `32` for non-64 displays. See `.env.example`.

@@ -29,8 +29,7 @@ export interface PixooFailure {
  * ```
  */
 export type PixooResult<T = Record<string, unknown>> =
-  | { ok: true; data: T & { error_code: 0 } }
-  | PixooFailure;
+  { ok: true; data: T & { error_code: 0 } } | PixooFailure;
 
 /** Unwrap a PixooResult, throwing on failure — for scripts that prefer exceptions. */
 export function unwrap<T>(result: PixooResult<T>): T & { error_code: 0 } {

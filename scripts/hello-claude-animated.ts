@@ -22,9 +22,6 @@ const eyeColor: RGB = [20, 12, 12];
 // Load base sprite
 const sprite = await downsampleSprite('assets/clawd.png', 10, 8);
 
-// Wink flag — drawn as a post-processing step so we can do half-eye
-let winking = false;
-
 // Shift the whole sprite left/right by nudging the render offset
 // Bounce: shift Y offset
 
@@ -37,7 +34,8 @@ let winking = false;
 // 12-13: lean left
 // 14-15: lean right
 // 16-17: wink + bounce up
-// 18-19: idle
+// 18:    wink
+// 19:    idle
 
 const FRAMES = 20;
 const SPEED = 150;
@@ -46,14 +44,11 @@ const anim = buildAnimation(FRAMES, SPEED, (frame, i) => {
   frame.clear([12, 8, 20]);
 
   // Determine sprite variant and position offset
-  const grid = sprite.grid;
   let dx = 0;
   let dy = 0;
-  winking = false;
+  const winking = i >= 16 && i <= 18;
 
-  if (i >= 0 && i <= 3) {
-    // idle
-  } else if (i === 4 || i === 5) {
+  if (i === 4 || i === 5) {
     dy = -2; // bounce up
   } else if (i === 6 || i === 7) {
     dy = 1; // squash down
@@ -65,12 +60,11 @@ const anim = buildAnimation(FRAMES, SPEED, (frame, i) => {
     dx = 2; // lean right
   } else if (i === 11 || i === 15) {
     dx = 3; // lean more right
-  } else if (i >= 16 && i <= 18) {
+  } else if (winking) {
     if (i === 16 || i === 17) dy = -2; // bounce up + wink
-    winking = true;
   }
 
-  renderSprite(frame, grid, {
+  renderSprite(frame, sprite.grid, {
     scale: 4,
     x: Math.floor((64 - 10 * 4) / 2) + dx,
     y: 24 + dy,

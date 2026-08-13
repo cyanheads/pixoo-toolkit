@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-08-13
+
+### Added
+
+- GitHub issue forms for bug reports and feature requests, including device, runtime, subsystem, and reproduction context.
+- `clean`, `rebuild`, `typecheck`, `docs:check`, `devcheck`, `check`, and `test:all` scripts; `prepublishOnly` now runs the documentation, static-analysis, clean-build, and test gates.
+
+### Changed
+
+- **Breaking:** `sharp` ^0.34.5 → ^0.35.3; Node.js consumers now require Node.js >= 20.9.0.
+- `@types/bun` ^1.3.9 → ^1.3.14.
+- `eslint` ^10.0.0 → ^10.8.1.
+- `prettier` ^3.8.1 → ^3.9.6.
+- `typescript` ^5.9.3 → ^6.0.3.
+- `typescript-eslint` ^8.56.0 → ^8.67.0.
+- `vitest` ^4.0.18 → ^4.1.10.
+
+### Fixed
+
+- `scripts/demo.ts` now bounds glow rendering by the target canvas dimensions rather than 64×64.
+- Animated GIF tests now validate frame dimensions and the GIF trailer.
+
 ## [0.6.1] — 2026-06-12
 
 ### Fixed

@@ -42,12 +42,12 @@ function drawGlowOrb(
   const r2 = radius * radius;
   for (
     let y = Math.max(0, Math.floor(cy - radius));
-    y <= Math.min(63, Math.ceil(cy + radius));
+    y <= Math.min(canvas.height - 1, Math.ceil(cy + radius));
     y++
   ) {
     for (
       let x = Math.max(0, Math.floor(cx - radius));
-      x <= Math.min(63, Math.ceil(cx + radius));
+      x <= Math.min(canvas.width - 1, Math.ceil(cx + radius));
       x++
     ) {
       const dx = x - cx;

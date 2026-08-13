@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canvasToPng } from '../src/preview.js';
+import { canvasToPng, encodeAnimationGif } from '../src/preview.js';
 import { Canvas } from '../src/canvas.js';
 
 describe('canvasToPng', () => {
@@ -76,5 +76,19 @@ describe('canvasToPng', () => {
     const c = new Canvas();
     const png = canvasToPng(c);
     expect(png).toBeInstanceOf(Uint8Array);
+  });
+});
+
+describe('encodeAnimationGif', () => {
+  it('encodes complete frames with the canvas dimensions', () => {
+    const first = new Canvas().clear([255, 0, 0]);
+    const second = new Canvas().clear([0, 0, 255]);
+
+    const gif = encodeAnimationGif([first, second], 100, 1);
+
+    expect(String.fromCharCode(...gif.subarray(0, 6))).toBe('GIF89a');
+    expect(gif[6]! | (gif[7]! << 8)).toBe(64);
+    expect(gif[8]! | (gif[9]! << 8)).toBe(64);
+    expect(gif.at(-1)).toBe(0x3b);
   });
 });

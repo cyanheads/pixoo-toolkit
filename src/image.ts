@@ -120,10 +120,8 @@ export async function downsampleSprite(
     };
   };
 
-  const isVisible = (x: number, y: number) => {
-    const p = px(x, y);
-    return p.a > alphaThresh && !(p.r > whiteThresh && p.g > whiteThresh && p.b > whiteThresh);
-  };
+  const isVisible = (p: ReturnType<typeof px>) =>
+    p.a > alphaThresh && !(p.r > whiteThresh && p.g > whiteThresh && p.b > whiteThresh);
 
   // Find bounding box of visible content
   let minX = width,
@@ -132,7 +130,8 @@ export async function downsampleSprite(
     maxY = 0;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      if (isVisible(x, y)) {
+      const p = px(x, y);
+      if (isVisible(p)) {
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
@@ -163,8 +162,8 @@ export async function downsampleSprite(
 
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
-      if (!isVisible(x, y)) continue;
       const p = px(x, y);
+      if (!isVisible(p)) continue;
       if (p.r < darkThresh && p.g < darkThresh && p.b < darkThresh) {
         darkR += p.r;
         darkG += p.g;
@@ -212,11 +211,11 @@ export async function downsampleSprite(
     for (let gx = 0; gx < cols; gx++) {
       const sx = Math.floor(minX + (gx + 0.5) * cellW);
       const sy = Math.floor(minY + (gy + 0.5) * cellH);
+      const p = px(sx, sy);
 
-      if (!isVisible(sx, sy)) {
+      if (!isVisible(p)) {
         row.push({ color: null });
       } else {
-        const p = px(sx, sy);
         if (p.r < darkThresh && p.g < darkThresh && p.b < darkThresh) {
           row.push({ color: darkColor });
         } else {
