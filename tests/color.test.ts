@@ -14,6 +14,14 @@ import {
   type RGB,
 } from '../src/color.js';
 
+function expectInvalidColorString(value: string): void {
+  expect(parseHexString(value), value).toBeNull();
+  expect(tryResolveColor(value), value).toBeNull();
+  expect(() => resolveColor(value), value).toThrow(
+    `Unknown color: ${JSON.stringify(value)} — expected a named color, '#RGB'/'#RRGGBB' hex string, 0xRRGGBB number, or [r, g, b] tuple`,
+  );
+}
+
 describe('hslToRgb', () => {
   it('converts pure red', () => {
     expect(hslToRgb([0, 1, 0.5])).toEqual([255, 0, 0]);
@@ -153,6 +161,21 @@ describe('parseHexString', () => {
     expect(parseHexString('abc')).toEqual([0xaa, 0xbb, 0xcc]);
   });
 
+  it('parses mixed-case 3- and 6-digit forms with or without #', () => {
+    const valid: [string, RGB][] = [
+      ['#aBc', [0xaa, 0xbb, 0xcc]],
+      ['aBc', [0xaa, 0xbb, 0xcc]],
+      ['#a1B2c3', [0xa1, 0xb2, 0xc3]],
+      ['a1B2c3', [0xa1, 0xb2, 0xc3]],
+    ];
+
+    for (const [value, expected] of valid) {
+      expect(parseHexString(value)).toEqual(expected);
+      expect(tryResolveColor(value)).toEqual(expected);
+      expect(resolveColor(value)).toEqual(expected);
+    }
+  });
+
   it('handles black', () => {
     expect(parseHexString('#000000')).toEqual([0, 0, 0]);
   });
@@ -160,6 +183,52 @@ describe('parseHexString', () => {
   it('returns null for invalid hex characters', () => {
     expect(parseHexString('#zzzzzz')).toBeNull();
     expect(parseHexString('xyz')).toBeNull();
+  });
+
+  it('rejects invalid characters in every 3- and 6-digit payload position', () => {
+    for (const length of [3, 6]) {
+      for (const prefix of ['', '#']) {
+        for (let index = 0; index < length; index++) {
+          const payload = `${'0'.repeat(index)}g${'0'.repeat(length - index - 1)}`;
+          expectInvalidColorString(`${prefix}${payload}`);
+        }
+      }
+    }
+  });
+
+  it('rejects malformed pairs instead of partially parsing them', () => {
+    for (const value of ['#0g0000', '#00g000', '#00000g']) {
+      expectInvalidColorString(value);
+    }
+  });
+
+  it('rejects whitespace, signs, prefixes, repeated #, non-ASCII, and unsupported lengths', () => {
+    const invalid = [
+      '',
+      '#',
+      ' #abc',
+      '#abc ',
+      '# abc',
+      'abc\n',
+      '+abc',
+      '-abc',
+      '#+abc',
+      '#-abc',
+      '0xabc',
+      '0xff8040',
+      '#0xabc',
+      '##abc',
+      '##ff8040',
+      '#é00',
+      'a',
+      'ab',
+      'abcd',
+      'abcde',
+      'abcdefg',
+      'abcdefgh',
+    ];
+
+    for (const value of invalid) expectInvalidColorString(value);
   });
 
   it('returns null for wrong-length strings', () => {
@@ -185,6 +254,7 @@ describe('resolveColor', () => {
   it('resolves named colors case-insensitively', () => {
     expect(resolveColor('RED')).toEqual([255, 0, 0]);
     expect(resolveColor('Blue')).toEqual([0, 0, 255]);
+    expect(tryResolveColor('ReD')).toEqual([255, 0, 0]);
   });
 
   it('resolves hex strings', () => {

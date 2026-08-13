@@ -54,24 +54,21 @@ export function hexToRgb(hex: number): RGB {
   return [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff];
 }
 
-/** Parse a CSS-style hex string (#RGB or #RRGGBB) into RGB. Returns null for invalid input. */
+/** Parse an optional # plus exactly 3 or 6 ASCII hex digits. Returns null for invalid input. */
 export function parseHexString(s: string): RGB | null {
   const clean = s.replace(/^#/, '');
+  if (!/^(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(clean)) return null;
   if (clean.length === 3) {
     const r = parseInt(clean[0]! + clean[0]!, 16);
     const g = parseInt(clean[1]! + clean[1]!, 16);
     const b = parseInt(clean[2]! + clean[2]!, 16);
-    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
     return [r, g, b];
   }
-  if (clean.length === 6) {
-    const r = parseInt(clean.slice(0, 2), 16);
-    const g = parseInt(clean.slice(2, 4), 16);
-    const b = parseInt(clean.slice(4, 6), 16);
-    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
-    return [r, g, b];
-  }
-  return null;
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ];
 }
 
 /** Clamp and round a numeric component into the 0–255 byte range. */

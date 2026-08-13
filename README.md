@@ -108,6 +108,10 @@ await device.pushAnimation(anim.frames, anim.speed);
 
 Animation frames passed to `pushAnimation()`, `encodeAnimationGif()`, or `saveAnimationGif()` must all have the same dimensions.
 
+### Colors
+
+String colors accept case-insensitive named colors or an optional single `#` followed by exactly 3 or 6 ASCII hexadecimal digits. `resolveColor()` throws for every other string; use `tryResolveColor()` when an invalid string should return `null` instead.
+
 ### Loading Images
 
 ```typescript
