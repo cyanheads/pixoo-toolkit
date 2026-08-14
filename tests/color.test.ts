@@ -311,6 +311,35 @@ describe('lerpColor', () => {
   it('clamps t above 1', () => {
     expect(lerpColor([100, 100, 100], [200, 200, 200], 2)).toEqual([200, 200, 200]);
   });
+
+  it('treats a NaN t as 0 and returns the start color', () => {
+    expect(lerpColor([0, 0, 0], [255, 255, 255], Number.NaN)).toEqual([0, 0, 0]);
+    expect(lerpColor([10, 20, 30], [200, 210, 220], Number.NaN)).toEqual([10, 20, 30]);
+  });
+
+  it('saturates to the end color at Infinity', () => {
+    expect(lerpColor([10, 20, 30], [200, 210, 220], Number.POSITIVE_INFINITY)).toEqual([
+      200, 210, 220,
+    ]);
+  });
+
+  it('saturates to the start color at -Infinity', () => {
+    expect(lerpColor([10, 20, 30], [200, 210, 220], Number.NEGATIVE_INFINITY)).toEqual([
+      10, 20, 30,
+    ]);
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('returns byte-range channels for a %s t', (_name, t) => {
+    for (const channel of lerpColor([0, 128, 255], [255, 128, 0], t)) {
+      expect(Number.isInteger(channel)).toBe(true);
+      expect(channel).toBeGreaterThanOrEqual(0);
+      expect(channel).toBeLessThanOrEqual(255);
+    }
+  });
 });
 
 describe('dimColor', () => {
@@ -332,6 +361,33 @@ describe('dimColor', () => {
 
   it('clamps to 0 for negative factor', () => {
     expect(dimColor([100, 100, 100], -1)).toEqual([0, 0, 0]);
+  });
+
+  it('treats a NaN factor as 0 and returns black', () => {
+    expect(dimColor([100, 100, 100], Number.NaN)).toEqual([0, 0, 0]);
+    expect(dimColor([0, 100, 255], Number.NaN)).toEqual([0, 0, 0]);
+  });
+
+  it('saturates every channel at Infinity, including a zero one', () => {
+    expect(dimColor([0, 100, 100], Number.POSITIVE_INFINITY)).toEqual([255, 255, 255]);
+    expect(dimColor([0, 0, 0], Number.POSITIVE_INFINITY)).toEqual([255, 255, 255]);
+  });
+
+  it('floors every channel at -Infinity, including a zero one', () => {
+    expect(dimColor([0, 100, 100], Number.NEGATIVE_INFINITY)).toEqual([0, 0, 0]);
+    expect(dimColor([255, 255, 255], Number.NEGATIVE_INFINITY)).toEqual([0, 0, 0]);
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('returns byte-range channels for a %s factor', (_name, factor) => {
+    for (const channel of dimColor([0, 128, 255], factor)) {
+      expect(Number.isInteger(channel)).toBe(true);
+      expect(channel).toBeGreaterThanOrEqual(0);
+      expect(channel).toBeLessThanOrEqual(255);
+    }
   });
 });
 

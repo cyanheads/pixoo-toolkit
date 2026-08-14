@@ -105,9 +105,12 @@ export function resolveColor(c: ColorLike): RGB {
   return rgb;
 }
 
-/** Linearly interpolate between two colors. t: 0–1. */
+/**
+ * Linearly interpolate between two colors. t: 0–1, clamped. A NaN t acts as
+ * 0 (the start color); ±Infinity saturates to the end/start color.
+ */
 export function lerpColor(a: RGB, b: RGB, t: number): RGB {
-  const u = Math.max(0, Math.min(1, t));
+  const u = Number.isNaN(t) ? 0 : Math.max(0, Math.min(1, t));
   return [
     Math.round(a[0] + (b[0] - a[0]) * u),
     Math.round(a[1] + (b[1] - a[1]) * u),
@@ -115,8 +118,16 @@ export function lerpColor(a: RGB, b: RGB, t: number): RGB {
   ];
 }
 
-/** Scale a color by a factor (0 = black, 1 = unchanged). Output is clamped to [0, 255]. */
+/**
+ * Scale a color by a factor (0 = black, 1 = unchanged). Output is clamped to
+ * [0, 255]. A NaN factor acts as 0 (black); ±Infinity saturates every channel
+ * — including a zero one, where `0 * Infinity` would otherwise be NaN.
+ */
 export function dimColor(c: RGB, factor: number): RGB {
+  if (!Number.isFinite(factor)) {
+    const v = factor === Number.POSITIVE_INFINITY ? 255 : 0;
+    return [v, v, v];
+  }
   return [
     Math.min(255, Math.max(0, Math.round(c[0] * factor))),
     Math.min(255, Math.max(0, Math.round(c[1] * factor))),
