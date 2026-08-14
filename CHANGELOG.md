@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.10] — 2026-08-13
+
+### Fixed
+
+- **font:** `GLYPHS_3x5` now defines a `?` glyph, so `resolveGlyph()`'s missing-character fallback renders the marker instead of silently dropping unsupported characters while still consuming their cell width (#29).
+- **font:** `GLYPHS_3x5` now covers the same printable-ASCII range as `GLYPHS_5x7` — adds `` " # $ % & ' * ; < = > ? @ [ \ ] ^ _ ` { | } ~ `` (#30).
+- **font:** `GLYPHS_3x5`'s `p` now renders with a lowercase form (body below the cap line, descending stem) instead of sharing `P`'s bitmap (#38).
+
 ## [0.7.9] — 2026-08-13
 
 ### Fixed
