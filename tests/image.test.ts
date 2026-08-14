@@ -159,6 +159,42 @@ describe('renderSprite', () => {
     expect(c.getPixel(12, 12)).toEqual([255, 255, 0]);
   });
 
+  it('rejects a ragged grid before painting anything', () => {
+    const c = new Canvas();
+    c.clear([128, 128, 128]);
+    const ragged: SpriteCell[][] = [
+      [{ color: [255, 0, 0] }, { color: [0, 255, 0] }],
+      [{ color: [0, 0, 255] }],
+    ];
+
+    expect(() => renderSprite(c, ragged, { scale: 4, x: 0, y: 0 })).toThrow(RangeError);
+    expect(() => renderSprite(c, ragged, { scale: 4, x: 0, y: 0 })).toThrow(
+      'Sprite grid row 1 has 1 cell; expected 2',
+    );
+    // The first row must not have been painted before the throw.
+    expect(c.getPixel(0, 0)).toEqual([128, 128, 128]);
+  });
+
+  it('rejects a row longer than the first', () => {
+    const c = new Canvas();
+    const ragged: SpriteCell[][] = [
+      [{ color: [255, 0, 0] }],
+      [{ color: [0, 255, 0] }, { color: [0, 0, 255] }],
+    ];
+
+    expect(() => renderSprite(c, ragged, { scale: 4 })).toThrow(
+      'Sprite grid row 1 has 2 cells; expected 1',
+    );
+  });
+
+  it('accepts a rectangular grid of any shape', () => {
+    const c = new Canvas();
+    const wide = makeGrid(6, 2, [255, 0, 0]);
+    const tall = makeGrid(2, 6, [0, 255, 0]);
+    expect(() => renderSprite(c, wide, { scale: 2, x: 0, y: 0 })).not.toThrow();
+    expect(() => renderSprite(c, tall, { scale: 2, x: 0, y: 20 })).not.toThrow();
+  });
+
   it('applies body color override', () => {
     const originalBody: RGB = [200, 100, 50];
     const newBody: RGB = [0, 255, 0];

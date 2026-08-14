@@ -231,7 +231,24 @@ export async function downsampleSprite(
 const sameRgb = (a: RGB, b: RGB): boolean => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
 /**
+ * Reject a grid whose rows disagree in length. Column count comes from the
+ * first row, so a shorter row would read past its end and a longer one would
+ * lose its trailing cells without a word.
+ */
+function assertRectangularGrid(grid: readonly SpriteCell[][], cols: number): void {
+  for (let gy = 1; gy < grid.length; gy++) {
+    const width = grid[gy]!.length;
+    if (width !== cols) {
+      throw new RangeError(
+        `Sprite grid row ${gy} has ${width} ${width === 1 ? 'cell' : 'cells'}; expected ${cols}`,
+      );
+    }
+  }
+}
+
+/**
  * Render a downsampled sprite grid onto a Canvas at a given scale and position.
+ * @throws {RangeError} When the grid's rows are not all the same length.
  */
 export function renderSprite(
   canvas: Canvas,
@@ -255,6 +272,7 @@ export function renderSprite(
 ): void {
   const rows = grid.length;
   const cols = grid[0]?.length ?? 0;
+  assertRectangularGrid(grid, cols);
   const scale = opts.scale ?? Math.floor(canvas.width / Math.max(cols, rows));
   const ox = opts.x ?? Math.floor((canvas.width - cols * scale) / 2);
   const oy = opts.y ?? 0;
