@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-08-13
+
+### Fixed
+
+- **image:** `renderSprite()` now throws `RangeError` naming the row and lengths when a sprite grid's rows disagree in width, instead of reading past a short row or silently dropping a long row's trailing cells (#41).
+- **scripts:** `PIXOO_IP` and `PIXOO_SIZE` now resolve through a shared `deviceFromEnv()` (`scripts/env.ts`), so every script sizes its client and canvas from the documented env var instead of a fixed 64-pixel default (#40).
+
 ## [0.8.1] — 2026-08-13
 
 ### Changed
