@@ -11,11 +11,11 @@ import {
   downsampleSprite,
   renderSprite,
 } from '../src/index.js';
+import { deviceFromEnv } from './env.js';
 
-const ip = process.env.PIXOO_IP;
-if (!ip) throw new Error('PIXOO_IP environment variable is required');
-const device = new PixooClient(ip);
-const canvas = new Canvas();
+const { ip, size } = deviceFromEnv();
+const device = new PixooClient(ip, { size });
+const canvas = new Canvas(size);
 
 canvas.clear([12, 8, 20]);
 
@@ -35,7 +35,7 @@ drawTextCentered(canvas, 'Hello', 2, Color.WHITE, { font: FONT_5x7 });
 const fromW = measureText('from ', { font: FONT_5x7 });
 const claudeW = measureText('Claude', { font: FONT_5x7 });
 const totalW = fromW + claudeW;
-const startX = Math.floor((64 - totalW) / 2);
+const startX = Math.floor((canvas.width - totalW) / 2);
 drawText(canvas, 'from ', startX, 12, Color.WHITE, { font: FONT_5x7 });
 drawText(canvas, 'Claude', startX + fromW, 12, claudeOrange, { font: FONT_5x7 });
 

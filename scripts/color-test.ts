@@ -14,9 +14,9 @@ import {
   FONT_3x5,
   type RGB,
 } from '../src/index.js';
+import { deviceFromEnv } from './env.js';
 
-const DEVICE_IP = process.env.PIXOO_IP;
-if (!DEVICE_IP) throw new Error('PIXOO_IP environment variable is required');
+const { ip: DEVICE_IP, size } = deviceFromEnv();
 
 // 16 colors to test — good spread across hue/saturation/value
 const TEST_COLORS: Array<{ label: string; rgb: RGB }> = [
@@ -42,12 +42,12 @@ function luminance([r, g, b]: RGB): number {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
-const canvas = new Canvas();
+const canvas = new Canvas(size);
 canvas.clear([0, 0, 0]);
 
 const COLS = 4;
-const CELL_W = 16; // 64 / 4
-const CELL_H = 16;
+const CELL_W = Math.floor(canvas.width / COLS);
+const CELL_H = Math.floor(canvas.height / COLS);
 
 for (let i = 0; i < TEST_COLORS.length; i++) {
   const { rgb } = TEST_COLORS[i]!;
@@ -78,7 +78,7 @@ for (let i = 0; i < TEST_COLORS.length; i++) {
 // Save preview and push
 await savePng(canvas, 'output/color-test.png');
 
-const client = new PixooClient(DEVICE_IP);
+const client = new PixooClient(DEVICE_IP, { size });
 const res = await client.push(canvas);
 console.log('Pushed color test chart:', res);
 console.log('\nColor key:');

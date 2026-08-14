@@ -13,10 +13,15 @@ import {
   FONT_5x7,
   type RGB,
 } from '../src/index.js';
+import { deviceFromEnv } from './env.js';
 
-const ip = process.env.PIXOO_IP;
-if (!ip) throw new Error('PIXOO_IP environment variable is required');
-const device = new PixooClient(ip);
+const { ip, size } = deviceFromEnv();
+// The composition below places every element at fixed 64-pixel coordinates —
+// it is the README header asset, not a display that reflows.
+if (size !== 64) {
+  throw new Error(`This script composes a fixed 64x64 image; PIXOO_SIZE is ${size}`);
+}
+const device = new PixooClient(ip, { size });
 
 // Deterministic PRNG for reproducible starfield
 function mulberry32(seed: number) {

@@ -1,9 +1,9 @@
 import { PixooClient, Canvas, Color, drawText, savePng, FONT_5x7, FONT_3x5 } from '../src/index.js';
+import { deviceFromEnv } from './env.js';
 
-const ip = process.env.PIXOO_IP;
-if (!ip) throw new Error('PIXOO_IP environment variable is required');
-const device = new PixooClient(ip);
-const canvas = new Canvas();
+const { ip, size } = deviceFromEnv();
+const device = new PixooClient(ip, { size });
+const canvas = new Canvas(size);
 
 canvas.clear([8, 6, 18]);
 
