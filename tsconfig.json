@@ -7,6 +7,7 @@
     "outDir": "dist",
     "rootDir": ".",
     "strict": true,
+    "noUncheckedIndexedAccess": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

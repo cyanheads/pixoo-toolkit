@@ -1,7 +1,7 @@
 import {
   PixooClient,
   Color,
-  NAMED_COLORS,
+  resolveColor,
   drawText,
   drawTextCentered,
   savePng,
@@ -16,7 +16,7 @@ import {
 const ip = process.env.PIXOO_IP;
 if (!ip) throw new Error('PIXOO_IP environment variable is required');
 const device = new PixooClient(ip);
-const claudeOrange = NAMED_COLORS.claude;
+const claudeOrange = resolveColor('claude');
 const eyeColor: RGB = [20, 12, 12];
 
 // Load base sprite

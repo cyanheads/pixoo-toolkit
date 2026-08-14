@@ -2,7 +2,7 @@ import {
   PixooClient,
   Canvas,
   Color,
-  NAMED_COLORS,
+  resolveColor,
   drawText,
   drawTextCentered,
   savePng,
@@ -20,7 +20,7 @@ const canvas = new Canvas();
 canvas.clear([12, 8, 20]);
 
 // --- Clawd: load from actual PNG ---
-const claudeOrange = NAMED_COLORS.claude;
+const claudeOrange = resolveColor('claude');
 const sprite = await downsampleSprite('assets/clawd.png', 10, 8);
 renderSprite(canvas, sprite.grid, {
   scale: 4,
