@@ -19,6 +19,16 @@ const RGB_BUFFER_SIZES = new Map<number, PixooSize>([
 ]);
 
 /**
+ * Reject non-finite geometry before it reaches bounds arithmetic, where NaN
+ * would collapse a shape into a silent no-op or a partial figure.
+ */
+function assertFinite(values: readonly number[], message: string): void {
+  if (!values.every(Number.isFinite)) {
+    throw new RangeError(message);
+  }
+}
+
+/**
  * Square RGBA pixel buffer with drawing primitives.
  *
  * The working buffer stores straight (non-premultiplied) RGBA — width ×
@@ -142,8 +152,12 @@ export class Canvas {
     return this;
   }
 
-  /** Fill a rectangular region. */
+  /**
+   * Fill a rectangular region.
+   * @throws {RangeError} When any coordinate or dimension is not finite.
+   */
   fillRect(x: number, y: number, w: number, h: number, color: ColorLike): this {
+    assertFinite([x, y, w, h], 'fillRect coordinates and dimensions must be finite');
     const [r, g, b] = resolveColor(color);
     const x0 = Math.max(0, Math.floor(x));
     const y0 = Math.max(0, Math.floor(y));
@@ -161,8 +175,12 @@ export class Canvas {
     return this;
   }
 
-  /** Fill a circle (solid). */
+  /**
+   * Fill a circle (solid).
+   * @throws {RangeError} When the center or radius is not finite.
+   */
   fillCircle(cx: number, cy: number, radius: number, color: ColorLike): this {
+    assertFinite([cx, cy, radius], 'fillCircle center and radius must be finite');
     const [r, g, b] = resolveColor(color);
     const r2 = radius * radius;
     const x0 = Math.max(0, Math.floor(cx - radius));
@@ -187,8 +205,13 @@ export class Canvas {
 
   // --- Stroke shapes ---
 
-  /** Draw a 1px rectangle outline. */
+  /**
+   * Draw a 1px rectangle outline. Validated here rather than in the delegated
+   * edge draws, so the error names the method the caller invoked.
+   * @throws {RangeError} When any coordinate or dimension is not finite.
+   */
   drawRect(x: number, y: number, w: number, h: number, color: ColorLike): this {
+    assertFinite([x, y, w, h], 'drawRect coordinates and dimensions must be finite');
     this.drawLineH(x, y, w, color);
     this.drawLineH(x, y + h - 1, w, color);
     this.drawLineV(x, y, h, color);
@@ -198,12 +221,10 @@ export class Canvas {
 
   /**
    * Draw a circle outline (Bresenham's midpoint algorithm).
-   * @throws {RangeError} When the radius is not finite.
+   * @throws {RangeError} When the center or radius is not finite.
    */
   drawCircle(cx: number, cy: number, radius: number, color: ColorLike): this {
-    if (!Number.isFinite(radius)) {
-      throw new RangeError('drawCircle radius must be finite');
-    }
+    assertFinite([cx, cy, radius], 'drawCircle center and radius must be finite');
     const c = resolveColor(color);
     let x = radius,
       y = 0,
@@ -233,9 +254,7 @@ export class Canvas {
    * @throws {RangeError} When any endpoint coordinate is not finite.
    */
   drawLine(x0: number, y0: number, x1: number, y1: number, color: ColorLike): this {
-    if (![x0, y0, x1, y1].every(Number.isFinite)) {
-      throw new RangeError('drawLine endpoint coordinates must be finite');
-    }
+    assertFinite([x0, y0, x1, y1], 'drawLine endpoint coordinates must be finite');
     x0 = Math.floor(x0);
     y0 = Math.floor(y0);
     x1 = Math.floor(x1);
@@ -319,8 +338,12 @@ export class Canvas {
     return this;
   }
 
-  /** Horizontal line (fast path). */
+  /**
+   * Horizontal line (fast path).
+   * @throws {RangeError} When any coordinate or the length is not finite.
+   */
   drawLineH(x: number, y: number, length: number, color: ColorLike): this {
+    assertFinite([x, y, length], 'drawLineH coordinates and length must be finite');
     const [r, g, b] = resolveColor(color);
     const iy = Math.floor(y);
     if (iy < 0 || iy >= this.height) return this;
@@ -336,8 +359,12 @@ export class Canvas {
     return this;
   }
 
-  /** Vertical line (fast path). */
+  /**
+   * Vertical line (fast path).
+   * @throws {RangeError} When any coordinate or the length is not finite.
+   */
   drawLineV(x: number, y: number, length: number, color: ColorLike): this {
+    assertFinite([x, y, length], 'drawLineV coordinates and length must be finite');
     const [r, g, b] = resolveColor(color);
     const ix = Math.floor(x);
     if (ix < 0 || ix >= this.width) return this;
@@ -369,7 +396,10 @@ export class Canvas {
     return this;
   }
 
-  /** Fill a solid triangle (scanline rasterization). */
+  /**
+   * Fill a solid triangle (scanline rasterization).
+   * @throws {RangeError} When any vertex coordinate is not finite.
+   */
   fillTriangle(
     x0: number,
     y0: number,
@@ -379,6 +409,7 @@ export class Canvas {
     y2: number,
     color: ColorLike,
   ): this {
+    assertFinite([x0, y0, x1, y1, x2, y2], 'fillTriangle vertex coordinates must be finite');
     const [r, g, b] = resolveColor(color);
     const w = this.width;
     const h = this.height;
@@ -423,11 +454,13 @@ export class Canvas {
     const lerp = (y: number, ya: number, xa: number, yb: number, xb: number) =>
       ya === yb ? xa : xa + ((y - ya) / (yb - ya)) * (xb - xa);
 
-    // Upper half: ay -> by
+    // Upper half: ay -> by. Ends on the last row strictly above `by`, which
+    // meets the lower half's `Math.ceil(by)` start with neither a gap nor an
+    // overlap for a fractional middle vertex as well as an integer one.
     if (by > ay) {
       scanline(
         ay,
-        by - 1,
+        Math.ceil(by) - 1,
         (y) => {
           const e1 = lerp(y, ay, ax, by, bx);
           const e2 = lerp(y, ay, ax, cy, cx);
@@ -561,7 +594,11 @@ export class Canvas {
     return this;
   }
 
-  /** Fill the canvas with a radial gradient from center. */
+  /**
+   * Fill the canvas with a radial gradient from center. At radius 0 the exact
+   * center pixel takes the inner color and every other pixel the outer one.
+   * @throws {RangeError} When the center or radius is not finite.
+   */
   gradientRadial(
     cx: number,
     cy: number,
@@ -569,6 +606,7 @@ export class Canvas {
     innerColor: ColorLike,
     outerColor: ColorLike,
   ): this {
+    assertFinite([cx, cy, radius], 'gradientRadial center and radius must be finite');
     const inner = resolveColor(innerColor);
     const outer = resolveColor(outerColor);
     for (let y = 0; y < this.height; y++) {
@@ -576,7 +614,9 @@ export class Canvas {
         const dx = x - cx,
           dy = y - cy;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const t = Math.min(1, dist / radius);
+        // The center resolves to the inner color outright — at radius 0 the
+        // ratio would otherwise be 0 / 0.
+        const t = dist === 0 ? 0 : Math.min(1, dist / radius);
         const c = lerpColor(inner, outer, t);
         this.setPixel(x, y, c);
       }
@@ -587,10 +627,14 @@ export class Canvas {
   // --- Transform ---
 
   /**
-   * Shift all pixels by dx, dy. Finite offsets are floored to integer pixel
+   * Shift all pixels by dx, dy. Offsets are floored to integer pixel
    * coordinates; vacated pixels become transparent.
+   * @throws {RangeError} When either offset is not finite — every destination
+   *   would fall out of bounds and the frame would be erased rather than
+   *   shifted.
    */
   scroll(dx: number, dy: number): this {
+    assertFinite([dx, dy], 'scroll offsets must be finite');
     const offsetX = Math.floor(dx);
     const offsetY = Math.floor(dy);
     const copy = new Uint8Array(this.buffer);

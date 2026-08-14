@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import { Canvas, DEFAULT_SIZE } from '../src/canvas.js';
 
+/** Count pixels carrying a non-zero stored alpha. */
+function paintedCount(c: Canvas): number {
+  let n = 0;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) if (c.getPixelRgba(x, y)[3] !== 0) n++;
+  }
+  return n;
+}
+
+/** Rows in [yStart, yEnd] carrying no painted pixel. */
+function emptyRows(c: Canvas, yStart: number, yEnd: number): number[] {
+  const rows: number[] = [];
+  for (let y = yStart; y <= yEnd; y++) {
+    let painted = 0;
+    for (let x = 0; x < c.width; x++) if (c.getPixelRgba(x, y)[3] !== 0) painted++;
+    if (painted === 0) rows.push(y);
+  }
+  return rows;
+}
+
 describe('Canvas construction', () => {
   it('creates a 64x64 canvas with an RGBA buffer', () => {
     const c = new Canvas();
@@ -144,11 +164,12 @@ describe('clear', () => {
     expect(c.getPixel(63, 63)).toEqual([50, 100, 150]);
   });
 
-  it('defaults to black', () => {
+  it('erases to fully transparent with no argument', () => {
     const c = new Canvas();
     c.setPixel(10, 10, [255, 0, 0]);
     c.clear();
-    expect(c.getPixel(10, 10)).toEqual([0, 0, 0]);
+    expect(c.getPixelRgba(10, 10)).toEqual([0, 0, 0, 0]);
+    expect(paintedCount(c)).toBe(0);
   });
 });
 
@@ -213,8 +234,25 @@ describe('drawCircle', () => {
     const c = new Canvas(16);
 
     expect(() => c.drawCircle(8, 8, Number.NaN, 'not-a-color')).toThrow(
-      new RangeError('drawCircle radius must be finite'),
+      new RangeError('drawCircle center and radius must be finite'),
     );
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects a %s center without mutation', (_name, value) => {
+    const cx = new Canvas(16);
+    const cy = new Canvas(16);
+    cx.setPixel(2, 2, [1, 2, 3], 17);
+    cy.setPixel(2, 2, [1, 2, 3], 17);
+    const before = new Uint8Array(cx.buffer);
+
+    expect(() => cx.drawCircle(value, 8, 4, [255, 0, 0])).toThrow(RangeError);
+    expect(() => cy.drawCircle(8, value, 4, [255, 0, 0])).toThrow(RangeError);
+    expect(cx.buffer).toEqual(before);
+    expect(cy.buffer).toEqual(before);
   });
 
   it('draws a circle outline', () => {
@@ -453,11 +491,193 @@ describe('fillTriangle', () => {
     expect(c.getPixel(30, 2)).toEqual([0, 0, 0]);
   });
 
-  it('handles degenerate (collinear) triangle gracefully', () => {
+  it('paints nothing for a degenerate (collinear) triangle', () => {
     const c = new Canvas();
-    // Horizontal line — no area to fill
-    c.fillTriangle(5, 5, 10, 5, 15, 5, [255, 0, 0]);
-    // Should not crash; may or may not fill the line
+    // Horizontal line — every vertex on row 5, so no scanline has any span
+    expect(c.fillTriangle(5, 5, 10, 5, 15, 5, [255, 0, 0])).toBe(c);
+    expect(paintedCount(c)).toBe(0);
+    expect(c.getPixelRgba(5, 5)).toEqual([0, 0, 0, 0]);
+    expect(c.getPixelRgba(10, 5)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('leaves no gap row at a fractional middle vertex', () => {
+    const c = new Canvas(64);
+    c.fillTriangle(10, 10, 40, 20.5, 12, 40, 'white');
+    expect(emptyRows(c, 10, 40)).toEqual([]);
+  });
+
+  it('leaves no gap row at an integer middle vertex', () => {
+    const c = new Canvas(64);
+    c.fillTriangle(10, 10, 40, 20, 12, 40, 'white');
+    expect(emptyRows(c, 10, 40)).toEqual([]);
+  });
+
+  it.each([20.01, 20.5, 20.99, 25.5])('covers every row for a middle vertex at y=%s', (by) => {
+    const c = new Canvas(64);
+    c.fillTriangle(10, 10, 40, by, 12, 40, 'white');
+
+    expect(emptyRows(c, 10, 40)).toEqual([]);
+  });
+
+  it('paints the exact fill of a fractional-middle-vertex triangle', () => {
+    const c = new Canvas(16);
+    c.fillTriangle(3, 2, 11, 6.5, 5, 10, [255, 0, 0]);
+
+    const rows: string[] = [];
+    for (let y = 0; y < c.height; y++) {
+      let row = '';
+      for (let x = 0; x < c.width; x++) row += c.getPixelRgba(x, y)[3] !== 0 ? '#' : '.';
+      rows.push(row);
+    }
+    // Rows 2–10 are each a single contiguous span, widest on row 6 — the last
+    // row of the upper half, immediately above the middle vertex at y=6.5.
+    expect(rows).toEqual([
+      '................',
+      '................',
+      '...#............',
+      '....#...........',
+      '....###.........',
+      '....#####.......',
+      '....#######.....',
+      '.....######.....',
+      '.....####.......',
+      '.....##.........',
+      '.....#..........',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+    ]);
+  });
+
+  it('keeps the row above a fractional middle vertex on a sliver triangle', () => {
+    const c = new Canvas(16);
+    c.fillTriangle(2, 4, 12, 4.5, 2, 5, [255, 0, 0]);
+
+    const painted: [number, number][] = [];
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        if (c.getPixelRgba(x, y)[3] !== 0) painted.push([x, y]);
+      }
+    }
+    expect(painted).toEqual([
+      [2, 4],
+      [2, 5],
+    ]);
+  });
+});
+
+describe('non-finite geometry', () => {
+  const NON_FINITE: [string, number][] = [
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ];
+
+  const GUARDED: [string, (c: Canvas, value: number, color: string) => unknown][] = [
+    ['fillRect x', (c, v, color) => c.fillRect(v, 0, 4, 4, color)],
+    ['fillRect y', (c, v, color) => c.fillRect(0, v, 4, 4, color)],
+    ['fillRect w', (c, v, color) => c.fillRect(0, 0, v, 4, color)],
+    ['fillRect h', (c, v, color) => c.fillRect(0, 0, 4, v, color)],
+    ['fillCircle cx', (c, v, color) => c.fillCircle(v, 8, 4, color)],
+    ['fillCircle cy', (c, v, color) => c.fillCircle(8, v, 4, color)],
+    ['fillCircle radius', (c, v, color) => c.fillCircle(8, 8, v, color)],
+    ['drawCircle cx', (c, v, color) => c.drawCircle(v, 8, 4, color)],
+    ['drawCircle cy', (c, v, color) => c.drawCircle(8, v, 4, color)],
+    ['drawCircle radius', (c, v, color) => c.drawCircle(8, 8, v, color)],
+    ['fillTriangle x0', (c, v, color) => c.fillTriangle(v, 0, 8, 2, 4, 8, color)],
+    ['fillTriangle y0', (c, v, color) => c.fillTriangle(0, v, 8, 2, 4, 8, color)],
+    ['fillTriangle x1', (c, v, color) => c.fillTriangle(0, 0, v, 2, 4, 8, color)],
+    ['fillTriangle y1', (c, v, color) => c.fillTriangle(0, 0, 8, v, 4, 8, color)],
+    ['fillTriangle x2', (c, v, color) => c.fillTriangle(0, 0, 8, 2, v, 8, color)],
+    ['fillTriangle y2', (c, v, color) => c.fillTriangle(0, 0, 8, 2, 4, v, color)],
+    ['drawLineH x', (c, v, color) => c.drawLineH(v, 4, 6, color)],
+    ['drawLineH y', (c, v, color) => c.drawLineH(0, v, 6, color)],
+    ['drawLineH length', (c, v, color) => c.drawLineH(0, 4, v, color)],
+    ['drawLineV x', (c, v, color) => c.drawLineV(v, 4, 6, color)],
+    ['drawLineV y', (c, v, color) => c.drawLineV(4, v, 6, color)],
+    ['drawLineV length', (c, v, color) => c.drawLineV(4, 0, v, color)],
+    ['drawRect x', (c, v, color) => c.drawRect(v, 0, 8, 8, color)],
+    ['drawRect y', (c, v, color) => c.drawRect(0, v, 8, 8, color)],
+    ['drawRect w', (c, v, color) => c.drawRect(0, 0, v, 8, color)],
+    ['drawRect h', (c, v, color) => c.drawRect(0, 0, 8, v, color)],
+    ['gradientRadial cx', (c, v, color) => c.gradientRadial(v, 8, 4, color, 'black')],
+    ['gradientRadial cy', (c, v, color) => c.gradientRadial(8, v, 4, color, 'black')],
+    ['gradientRadial radius', (c, v, color) => c.gradientRadial(8, 8, v, color, 'black')],
+  ];
+
+  const cases = GUARDED.flatMap(([label, call]) =>
+    NON_FINITE.map(
+      ([valueName, value]) =>
+        [label, valueName, call, value] as [string, string, typeof call, number],
+    ),
+  );
+
+  it.each(cases)('rejects %s = %s without mutation', (_label, _valueName, call, value) => {
+    const c = new Canvas(16);
+    c.setPixel(2, 2, [1, 2, 3], 17);
+    const before = new Uint8Array(c.buffer);
+
+    expect(() => call(c, value, 'red')).toThrow(RangeError);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it('rejects a NaN width instead of drawing a stray rectangle edge', () => {
+    const c = new Canvas(64);
+
+    expect(() => c.drawRect(0, 0, Number.NaN, 10, 'red')).toThrow(RangeError);
+    expect(paintedCount(c)).toBe(0);
+  });
+
+  it('names drawRect — not a delegate — in the error message', () => {
+    expect(() => new Canvas(16).drawRect(0, 0, Number.NaN, 10, 'red')).toThrow(
+      new RangeError('drawRect coordinates and dimensions must be finite'),
+    );
+  });
+
+  it.each([
+    ['drawCircle', (c: Canvas, v: number) => c.drawCircle(v, 8, 4, 'red')],
+    ['fillCircle', (c: Canvas, v: number) => c.fillCircle(v, 8, 4, 'red')],
+  ])('names the center alongside the radius in the %s message', (method, call) => {
+    expect(() => call(new Canvas(16), Number.NaN)).toThrow(
+      new RangeError(`${method} center and radius must be finite`),
+    );
+  });
+
+  it('names the center alongside the radius in the gradientRadial message', () => {
+    expect(() => new Canvas(16).gradientRadial(Number.NaN, 8, 4, 'white', 'black')).toThrow(
+      new RangeError('gradientRadial center and radius must be finite'),
+    );
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects a %s fillCircle radius, matching drawCircle', (_name, radius) => {
+    const filled = new Canvas(64);
+    const stroked = new Canvas(64);
+
+    expect(() => filled.fillCircle(32, 32, radius, 'red')).toThrow(RangeError);
+    expect(() => stroked.drawCircle(32, 32, radius, 'red')).toThrow(RangeError);
+    expect(paintedCount(filled)).toBe(0);
+  });
+
+  it.each(GUARDED)('validates %s before resolving the color', (_label, call) => {
+    expect(() => call(new Canvas(16), Number.NaN, 'not-a-color')).toThrow(RangeError);
+  });
+
+  it('still draws for finite geometry', () => {
+    const c = new Canvas(16);
+    c.fillRect(0, 0, 2, 2, 'red');
+    c.drawRect(4, 4, 4, 4, 'red');
+    c.fillCircle(12, 12, 1, 'red');
+    c.drawLineH(0, 15, 3, 'red');
+    c.drawLineV(15, 0, 3, 'red');
+    c.fillTriangle(0, 8, 4, 8, 2, 11, 'red');
+
+    expect(paintedCount(c)).toBeGreaterThan(0);
   });
 });
 
@@ -594,6 +814,21 @@ describe('gradientRadial', () => {
     const edge = c.getPixel(0, 0);
     expect(center[0]).toBeGreaterThan(edge[0]);
   });
+
+  it('resolves the center pixel to the inner color at radius 0', () => {
+    const c = new Canvas();
+    c.gradientRadial(32, 32, 0, 'white', 'black');
+    expect(c.getPixel(32, 32)).toEqual([255, 255, 255]);
+  });
+
+  it('gives every non-center pixel the outer color at radius 0', () => {
+    const c = new Canvas(16);
+    c.gradientRadial(8, 8, 0, 'white', [10, 20, 30]);
+    expect(c.getPixel(0, 0)).toEqual([10, 20, 30]);
+    expect(c.getPixel(8, 7)).toEqual([10, 20, 30]);
+    expect(c.getPixel(15, 15)).toEqual([10, 20, 30]);
+    expect(c.getPixel(8, 8)).toEqual([255, 255, 255]);
+  });
 });
 
 describe('scroll', () => {
@@ -632,6 +867,26 @@ describe('scroll', () => {
     expect(c.getPixelRgba(59, 0)).toEqual([0, 0, 0, 0]);
     // Pixels 60-63 should have original content
     expect(c.getPixelRgba(63, 0)).toEqual([128, 128, 128, 255]);
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects a %s offset instead of erasing the canvas', (_name, offset) => {
+    const horizontal = new Canvas(64).fillRect(0, 0, 64, 64, 'red');
+    const vertical = new Canvas(64).fillRect(0, 0, 64, 64, 'red');
+
+    expect(() => horizontal.scroll(offset, 0)).toThrow(RangeError);
+    expect(() => vertical.scroll(0, offset)).toThrow(RangeError);
+    expect(paintedCount(horizontal)).toBe(64 * 64);
+    expect(paintedCount(vertical)).toBe(64 * 64);
+  });
+
+  it('names scroll in the offset error message', () => {
+    expect(() => new Canvas(16).scroll(Number.NaN, 0)).toThrow(
+      new RangeError('scroll offsets must be finite'),
+    );
   });
 });
 
