@@ -5,9 +5,21 @@ import {
   fillPolygon,
   fillSubpaths,
   renderSvgPath,
+  strokeSubpaths,
   type Point,
 } from '../src/svg-path.js';
 import { Canvas } from '../src/canvas.js';
+
+/** Every lit pixel as `x,y`, row-major — exact painted geometry, not just a count. */
+function litPixels(canvas: Canvas): string[] {
+  const out: string[] = [];
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      if (canvas.getPixel(x, y)[0] === 255) out.push(`${x},${y}`);
+    }
+  }
+  return out;
+}
 
 describe('parseSvgPath', () => {
   it('parses absolute MoveTo', () => {
@@ -372,6 +384,49 @@ describe('fillPolygon', () => {
 });
 
 describe('renderSvgPath', () => {
+  it('fills every pixel of a right triangle and no others', () => {
+    const c = new Canvas(16);
+    renderSvgPath(c, 'M2 2 L10 2 L10 10 Z', [255, 0, 0], [16, 16], [0, 0, 16, 16]);
+    expect(litPixels(c)).toEqual([
+      '3,2',
+      '4,2',
+      '5,2',
+      '6,2',
+      '7,2',
+      '8,2',
+      '9,2',
+      '10,2',
+      '4,3',
+      '5,3',
+      '6,3',
+      '7,3',
+      '8,3',
+      '9,3',
+      '10,3',
+      '5,4',
+      '6,4',
+      '7,4',
+      '8,4',
+      '9,4',
+      '10,4',
+      '6,5',
+      '7,5',
+      '8,5',
+      '9,5',
+      '10,5',
+      '7,6',
+      '8,6',
+      '9,6',
+      '10,6',
+      '8,7',
+      '9,7',
+      '10,7',
+      '9,8',
+      '10,8',
+      '10,9',
+    ]);
+  });
+
   it('renders a simple triangle path', () => {
     const c = new Canvas();
     renderSvgPath(c, 'M0 0 L16 0 L8 16 Z', [255, 0, 0], [16, 16], [0, 0, 64, 64]);
@@ -500,5 +555,132 @@ describe('subpaths and implicit closure', () => {
       { x: 0.5, y: 0.5 },
       { x: 1.5, y: 1.5 },
     ]);
+  });
+});
+
+describe('strokeSubpaths', () => {
+  it('draws every segment of an open ring and no closing segment', () => {
+    const c = new Canvas(16);
+    strokeSubpaths(
+      c,
+      [
+        [
+          { x: 2, y: 2 },
+          { x: 5, y: 2 },
+          { x: 5, y: 5 },
+        ],
+      ],
+      [255, 0, 0],
+    );
+    expect(litPixels(c)).toEqual(['2,2', '3,2', '4,2', '5,2', '5,3', '5,4', '5,5']);
+  });
+
+  it('draws the closing segment of a Z-terminated ring', () => {
+    const c = new Canvas(16);
+    strokeSubpaths(c, parseSvgPathSubpaths('M2,2 L5,2 L5,5 Z'), [255, 0, 0]);
+    expect(litPixels(c)).toEqual(['2,2', '3,2', '4,2', '5,2', '3,3', '5,3', '4,4', '5,4', '5,5']);
+  });
+
+  it('draws a two-point ring that fill renders as nothing', () => {
+    const ring: Point[] = [
+      { x: 2, y: 2 },
+      { x: 5, y: 5 },
+    ];
+
+    const stroked = new Canvas(16);
+    strokeSubpaths(stroked, [ring], [255, 0, 0]);
+    expect(litPixels(stroked)).toEqual(['2,2', '3,3', '4,4', '5,5']);
+
+    const filled = new Canvas(16);
+    fillSubpaths(filled, [ring], [255, 0, 0]);
+    expect(litPixels(filled)).toEqual([]);
+  });
+
+  it('draws nothing for a one-point ring', () => {
+    const c = new Canvas(16);
+    strokeSubpaths(c, [[{ x: 4, y: 4 }]], [255, 0, 0]);
+    expect(litPixels(c)).toEqual([]);
+  });
+
+  it('draws nothing for an empty subpath list', () => {
+    const c = new Canvas(16);
+    strokeSubpaths(c, [], [255, 0, 0]);
+    expect(litPixels(c)).toEqual([]);
+  });
+
+  it('clips a segment that runs past both canvas edges', () => {
+    const c = new Canvas(16);
+    strokeSubpaths(
+      c,
+      [
+        [
+          { x: -4, y: 4 },
+          { x: 20, y: 4 },
+        ],
+      ],
+      [255, 0, 0],
+    );
+    expect(litPixels(c)).toEqual(Array.from({ length: 16 }, (_, x) => `${x},4`));
+  });
+
+  it('throws RangeError for non-finite geometry', () => {
+    const c = new Canvas(16);
+    expect(() =>
+      strokeSubpaths(
+        c,
+        [
+          [
+            { x: 2, y: 2 },
+            { x: Number.POSITIVE_INFINITY, y: 5 },
+          ],
+        ],
+        [255, 0, 0],
+      ),
+    ).toThrow(RangeError);
+  });
+});
+
+describe('renderSvgPath stroke mode', () => {
+  const CHEVRON = 'M6,4 L12,10 L6,16';
+
+  it('strokes an outline chevron instead of filling its wedge', () => {
+    const stroked = new Canvas(32);
+    renderSvgPath(stroked, CHEVRON, [255, 0, 0], [24, 24], [0, 0, 24, 24], { mode: 'stroke' });
+    expect(litPixels(stroked)).toEqual([
+      '6,4',
+      '7,5',
+      '8,6',
+      '9,7',
+      '10,8',
+      '11,9',
+      '12,10',
+      '11,11',
+      '10,12',
+      '9,13',
+      '8,14',
+      '7,15',
+      '6,16',
+    ]);
+
+    const filled = new Canvas(32);
+    renderSvgPath(filled, CHEVRON, [255, 0, 0], [24, 24], [0, 0, 24, 24]);
+    expect(litPixels(filled)).toHaveLength(42);
+    // The wedge interior is fill-only — it is not part of the outline
+    expect(filled.getPixel(8, 10)).toEqual([255, 0, 0]);
+    expect(stroked.getPixel(8, 10)).toEqual([0, 0, 0]);
+  });
+
+  it('renders identical output for the default and an explicit fill mode', () => {
+    const implicit = new Canvas(32);
+    renderSvgPath(implicit, CHEVRON, [255, 0, 0], [24, 24], [0, 0, 24, 24]);
+    const explicit = new Canvas(32);
+    renderSvgPath(explicit, CHEVRON, [255, 0, 0], [24, 24], [0, 0, 24, 24], { mode: 'fill' });
+    expect(litPixels(explicit)).toEqual(litPixels(implicit));
+  });
+
+  it('strokes a closed path back to its start point', () => {
+    const c = new Canvas(16);
+    renderSvgPath(c, 'M2,2 L5,2 L5,5 Z', [255, 0, 0], [16, 16], [0, 0, 16, 16], { mode: 'stroke' });
+    expect(litPixels(c)).toEqual(['2,2', '3,2', '4,2', '5,2', '3,3', '5,3', '4,4', '5,4', '5,5']);
   });
 });

@@ -4,7 +4,8 @@
  * Parses SVG path `d` attributes (M/m, L/l, H/h, V/v, Z/z, C/c, S/s, Q/q,
  * T/t, A/a, and implicit lineTo after moveTo) into subpaths, then rasterizes
  * with even-odd scanline fill — multiple subpaths produce holes (donuts,
- * letter counters), matching SVG fill semantics.
+ * letter counters), matching SVG fill semantics. Outline paths that carry no
+ * fill render instead as 1-pixel strokes along each subpath's segments.
  *
  * Cubic and quadratic Béziers (C/c, S/s, Q/q, T/t) are flattened by sampling
  * CURVE_SAMPLES points per segment, with smooth-command control-point
@@ -490,10 +491,50 @@ export function fillPolygon(canvas: Canvas, points: Point[], color: ColorLike): 
 }
 
 /**
+ * Draw the outline of one or more point rings as 1-pixel lines.
+ *
+ * Unlike `fillSubpaths`, a ring is NOT implicitly closed — only `i` to `i + 1`
+ * edges are drawn, so an open path keeps its ends apart instead of growing a
+ * spurious segment from its end back to its start. A `Z`/`z`-terminated path
+ * needs no special case: the parser repeats the subpath's start point as the
+ * ring's last point, so the closing segment falls out of the same walk. Rings
+ * of fewer than 2 points have no segment to draw and are skipped.
+ *
+ * Stroke width, joins, caps, and dashes are out of scope — a 1-pixel stroke is
+ * what a Pixoo panel can express.
+ *
+ * @throws {RangeError} When any point coordinate is not finite.
+ */
+export function strokeSubpaths(
+  canvas: Canvas,
+  subpaths: readonly Point[][],
+  color: ColorLike,
+): void {
+  const rgb = resolveColor(color);
+  for (const ring of subpaths) {
+    for (let i = 0; i + 1 < ring.length; i++) {
+      const a = ring[i]!;
+      const b = ring[i + 1]!;
+      canvas.drawLine(a.x, a.y, b.x, b.y, rgb);
+    }
+  }
+}
+
+/** Rendering options for `renderSvgPath`. */
+export interface RenderSvgPathOptions {
+  /**
+   * `fill` (default) rasterizes with even-odd scanline fill; `stroke` draws the
+   * path's segments as 1-pixel lines, for `fill="none"` outline icons.
+   */
+  mode?: 'fill' | 'stroke';
+}
+
+/**
  * Render an SVG path onto a canvas, scaled and translated.
  *
  * @param svgViewBox - Original SVG viewBox dimensions [width, height]
  * @param targetRect - Where to render on canvas [x, y, width, height]
+ * @param options - Selects fill (default) or stroke rendering
  */
 export function renderSvgPath(
   canvas: Canvas,
@@ -501,6 +542,7 @@ export function renderSvgPath(
   color: ColorLike,
   svgViewBox: [number, number] = [16, 16],
   targetRect?: [number, number, number, number],
+  options?: RenderSvgPathOptions,
 ): void {
   const [tx, ty, tw, th] = targetRect ?? [0, 0, canvas.width, canvas.height];
   const [vw, vh] = svgViewBox;
@@ -514,5 +556,6 @@ export function renderSvgPath(
     })),
   );
 
-  fillSubpaths(canvas, scaled, color);
+  const render = options?.mode === 'stroke' ? strokeSubpaths : fillSubpaths;
+  render(canvas, scaled, color);
 }

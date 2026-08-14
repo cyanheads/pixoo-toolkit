@@ -54,14 +54,17 @@ export {
   saveAnimationPngs,
   encodeAnimationGif,
   saveAnimationGif,
+  type PngOptions,
 } from './preview.js';
 
 // SVG
 export {
   type Point,
+  type RenderSvgPathOptions,
   parseSvgPath,
   parseSvgPathSubpaths,
   fillPolygon,
   fillSubpaths,
+  strokeSubpaths,
   renderSvgPath,
 } from './svg-path.js';
