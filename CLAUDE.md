@@ -202,7 +202,7 @@ src/
   font.ts       Bitmap fonts (FONT_5x7 and FONT_3x5, both full printable ASCII), drawText, measureText
   image.ts      Image loading (sharp, alpha-preserving), sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
-  preview.ts    Zero-dep PNG encoder, savePng(); animated GIF export via gifenc
+  preview.ts    Zero-dep PNG encoder, savePng() with opt-in RGBA; animated GIF export via gifenc
   svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer
   gifenc.d.ts   Local type declarations for gifenc (ships none)
   index.ts      Barrel export
