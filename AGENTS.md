@@ -194,7 +194,7 @@ AGENTS.md      Agent instructions for Codex and other harnesses; mirrors this fi
 .github/       Issue forms, contributing guide, security policy, code of conduct
 skills/        Agent Skills — git-wrapup, release-and-publish, report-issue-local
 assets/         Source images (PNGs) for sprites — drop files here
-scripts/        Reusable display scripts plus tooling (clean, check-docs-sync, list-skills)
+scripts/        Reusable display scripts plus shared env config and tooling (env, clean, check-docs-sync, list-skills)
 output/         Generated PNG previews — do not commit
 src/
   canvas.ts     Square RGBA pixel buffer (16/32/64) + drawing primitives; exports flatten to device RGB
@@ -273,11 +273,13 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 |---|---|---|
 | `hello-claude.ts` | Static frame: Clawd sprite + "Hello from Claude" text | `bun dist/scripts/hello-claude.js` |
 | `hello-claude-animated.ts` | 20-frame animation: bouncing/winking Clawd + text | `bun dist/scripts/hello-claude-animated.js` |
-| `demo.ts` | README header generator: space-themed canvas with orbs, gradients, text | `bun dist/scripts/demo.js` |
+| `demo.ts` | README header generator: space-themed canvas with orbs, gradients, text. Fixed 64×64 composition — rejects a non-64 `PIXOO_SIZE` | `bun dist/scripts/demo.js` |
 | `color-test.ts` | 4×4 color calibration chart (16 named swatches) | `bun dist/scripts/color-test.js` |
 | `font-test.ts` | Visual test for FONT_5x7 and FONT_3x5 with mixed-case rendering | `bun dist/scripts/font-test.js` |
 
 All scripts: `bun run build && bun dist/scripts/<name>.js`
+
+Each reads `PIXOO_IP` and `PIXOO_SIZE` through `deviceFromEnv()` in `scripts/env.ts`, which validates the size against 16/32/64 and defaults to 64. Build layout from the canvas's own `width`/`height` rather than a literal, so a script composed at one size still lands on another.
 
 ## Conventions
 
