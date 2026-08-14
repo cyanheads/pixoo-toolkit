@@ -27,7 +27,7 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 | **Canvas** | Square RGBA pixel buffer (16/32/64) — alpha-aware source-over compositing, pixel access, rects, circles, lines, triangles, 3 gradient modes, clone, scrolling; exports flatten to device RGB |
 | **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact with lowercase) with tight proportional metrics, measurement, and centered rendering |
 | **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing — strict resolution (typos throw, `tryResolveColor` to probe) |
-| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success |
+| **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success. Pushed canvases must match the configured display size, and `minPushInterval` spaces frames to respect the firmware's push limit |
 | **Image Loading** | Alpha-preserving resize to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves and elliptical arcs) and rasterize with even-odd scanline fill — multi-subpath holes |
@@ -153,6 +153,16 @@ All commands go to `POST http://<device-ip>/post` with a JSON body containing a 
 For raw calls, the positional `command` is authoritative if `params` also contains a top-level `Command`; other parameters, including nested `CommandList` entries, are preserved. The client retries network failures, abort-driven timeouts, and HTTP 408, 429, 500, 502, 503, and 504 with exponential backoff. Other HTTP failures and device rejections return immediately; `retries: 0` makes one attempt.
 
 Every call returns a `PixooResult`: `{ ok: true, data }` or `{ ok: false, kind, message }` where `kind` is `'network' | 'timeout' | 'http' | 'device'` — narrow on `ok` to reach the data, or use `unwrap()` to throw on failure.
+
+`size` tells the client which panel it is talking to. `push()` and `pushAnimation()` throw `RangeError` for a canvas that doesn't match it, before any request goes out — the device would render a mismatched frame garbled or not at all, and that failure is invisible from the calling side. A `PixooResult` is reserved for what the device and network do; a canvas sized wrong at construction is a coding error.
+
+The firmware can freeze after roughly 300 consecutive pushes, so pushes should be spaced about a second apart. `minPushInterval` enforces that spacing across `push()` and `pushAnimation()` — including between the frames of one animation, which is where the pushes accumulate fastest:
+
+```typescript
+const device = new PixooClient(process.env.PIXOO_IP!, { size: 64, minPushInterval: 1000 });
+```
+
+It is off by default. The interval covers the `Draw/SendHttpGif` frames only, measured from when each send starts; the `Draw/ResetHttpGifId` that precedes a push and every non-drawing command go out unthrottled.
 
 ```typescript
 import { PixooClient, Channel, unwrap } from '@cyanheads/pixoo-toolkit';

@@ -87,8 +87,9 @@ This is the primary way to push custom visuals to the device.
 - Max ~40 frames before potential device crash
 - Each new animation triggers a ~5s "Loading.." overlay
 - `Draw/CommandList` CANNOT batch multi-frame sends — must loop individual `Draw/SendHttpGif` calls
-- Display may freeze after ~300 consecutive pushes (firmware bug) — periodically reset connection
+- Display may freeze after ~300 consecutive pushes (firmware bug) — periodically reset connection. Space pushes ~1s apart to stay clear of it; the `minPushInterval` client option does this for `push()` and `pushAnimation()`
 - Previous frame may partially bleed through (firmware buffer issue)
+- `PicWidth` must match the panel — a canvas of any other size renders garbled or not at all. `PixooClient` throws `RangeError` rather than sending one
 
 #### Text / Scrolling
 
@@ -197,7 +198,7 @@ scripts/        Reusable display scripts plus tooling (clean, check-docs-sync, l
 output/         Generated PNG previews — do not commit
 src/
   canvas.ts     Square RGBA pixel buffer (16/32/64) + drawing primitives; exports flatten to device RGB
-  client.ts     PixooClient — HTTP device control, PixooResult on every call, LAN discovery
+  client.ts     PixooClient — HTTP device control, PixooResult on every call, size-matched pushes, optional frame throttle, LAN discovery
   color.ts      RGB/HSL types, named colors, lerp, dim; strict resolveColor / tryResolveColor
   font.ts       Bitmap fonts (FONT_5x7 and FONT_3x5, both full printable ASCII), drawText, measureText
   image.ts      Image loading (sharp, alpha-preserving), sprite downsampling + rendering
@@ -286,7 +287,8 @@ All scripts: `bun run build && bun dist/scripts/<name>.js`
 - Pixel data is `size × size` (16, 32, or 64), RGB, row-major, base64-encoded
 - Use `PicID` to track animation identity; increment for new animations
 - Keep frame count under 40 for stability
-- Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug
+- Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug — `new PixooClient(ip, { minPushInterval: 1000 })` enforces it
+- A pushed canvas must match the client's configured `size`; a mismatch throws `RangeError` instead of sending a frame the panel can't render
 
 ## Skills
 
