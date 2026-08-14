@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.12] — 2026-08-13
+
+### Added
+
+- **client:** `minPushInterval` option spaces `Draw/SendHttpGif` sends in `push()` and `pushAnimation()`, off by default; `Draw/ResetHttpGifId` and non-draw commands go unthrottled (#35).
+
+### Fixed
+
+- **client:** `push()` and `pushAnimation()` now throw `RangeError` when a canvas doesn't match the client's configured `size`, instead of sending a `PicWidth` the device can't render (#31).
+
 ## [0.7.11] — 2026-08-13
 
 ### Added
