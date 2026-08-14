@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-08-13
+
+### Added
+
+- **svg-path:** `strokeSubpaths()` draws a subpath's point ring as 1-pixel segments, `i` to `i + 1` only — no implicit closing edge on an open ring (#34).
+- **svg-path:** `renderSvgPath()` takes a `RenderSvgPathOptions` argument selecting `mode: 'stroke'` for outline paths (`fill="none"`); `mode: 'fill'` (default) is unchanged (#34).
+- **index:** barrel now exports `strokeSubpaths`, `type RenderSvgPathOptions`, and `type PngOptions` (#34, #39).
+
 ## [0.7.12] — 2026-08-13
 
 ### Added
