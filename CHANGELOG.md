@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.11] — 2026-08-13
+
+### Added
+
+- **preview:** `canvasToPng()` and `savePng()` take an opt-in `{ alpha: true }` option that encodes PNG color type 6 (RGBA) straight from the canvas buffer, preserving transparency; the default output is unchanged — alpha still flattens over black (#33).
+
+### Fixed
+
+- **preview:** `canvasToPng()`, `savePng()`, `encodeAnimationGif()`, and `saveAnimationGif()` now throw `RangeError` when `scale` is not a positive integer, instead of writing a corrupt PNG/GIF for `0`, `NaN`, a negative factor, or a fraction (#32).
+
 ## [0.7.10] — 2026-08-13
 
 ### Fixed
