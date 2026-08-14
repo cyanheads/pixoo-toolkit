@@ -1,6 +1,72 @@
 import { describe, it, expect } from 'vitest';
-import { FONT_5x7, FONT_3x5, measureText, drawText, drawTextCentered } from '../src/font.js';
+import { createHash } from 'node:crypto';
+import {
+  FONT_5x7,
+  FONT_3x5,
+  measureText,
+  drawText,
+  drawTextCentered,
+  type BitmapFont,
+} from '../src/font.js';
 import { Canvas } from '../src/canvas.js';
+
+/** Printable-ASCII characters FONT_5x7 has always defined and FONT_3x5 previously lacked. */
+const ADDED_3x5 = `"#$%&'*;<=>?@[\\]^_\`{|}~`;
+
+/** Pairs whose 3×5 forms are close enough that an identical bitmap would be a defect. */
+const CONFUSABLE_PAIRS: readonly (readonly [string, string])[] = [
+  ['[', '{'],
+  [']', '}'],
+  ["'", '`'],
+  ['"', '#'],
+  ['<', '('],
+  ['>', ')'],
+  ['_', '-'],
+  [';', ':'],
+  ['*', '+'],
+];
+
+/** Every inked pixel on the canvas, in row-major order. */
+function inkPixels(c: Canvas): [number, number][] {
+  const px: [number, number][] = [];
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      if (c.getPixelRgba(x, y)[3] !== 0) px.push([x, y]);
+    }
+  }
+  return px;
+}
+
+/** Column indices carrying at least one inked pixel. */
+function inkColumns(c: Canvas): number[] {
+  return [...new Set(inkPixels(c).map(([x]) => x))].sort((a, b) => a - b);
+}
+
+/** Horizontal ink extent, or null when nothing was drawn. */
+function inkSpan(c: Canvas): { min: number; max: number; width: number } | null {
+  const cols = inkColumns(c);
+  const min = cols[0];
+  const max = cols[cols.length - 1];
+  if (min === undefined || max === undefined) return null;
+  return { min, max, width: max - min + 1 };
+}
+
+/** Characters sharing an identical bitmap, as `"a=b"` labels — empty when the table is collision-free. */
+function collisions(font: BitmapFont): string[] {
+  const byBitmap = new Map<string, string[]>();
+  for (const [ch, rows] of Object.entries(font.glyphs)) {
+    const key = rows.join(',');
+    byBitmap.set(key, [...(byBitmap.get(key) ?? []), ch]);
+  }
+  return [...byBitmap.values()].filter((chars) => chars.length > 1).map((chars) => chars.join('='));
+}
+
+/** Stable digest of a glyph table — pins the exact bitmaps, not just their shape. */
+function fontHash(font: BitmapFont): string {
+  const h = createHash('sha256');
+  for (const [ch, rows] of Object.entries(font.glyphs)) h.update(`${ch}:${rows.join(',')};`);
+  return h.digest('hex');
+}
 
 describe('FONT_5x7', () => {
   it('has 5px width and 7px height', () => {
@@ -284,5 +350,183 @@ describe('proportional metrics (tight ink bounds)', () => {
     const w = drawText(c, '!', 0, 0, [255, 0, 0], { scale: 2 });
     expect(w).toBe(4); // (1px ink + 1px spacing) * 2
     expect(c.getPixel(0, 0)).toEqual([255, 0, 0]); // ink starts at the pen even when scaled
+  });
+});
+
+describe('font table characterization', () => {
+  it('keeps the FONT_5x7 glyph table byte-identical', () => {
+    // Update this digest only when FONT_5x7 itself is deliberately edited.
+    expect(fontHash(FONT_5x7)).toBe(
+      'dac5b718165e8c9c99df5e954609adac1b2bb978c3ea5376cd536e12aab23073',
+    );
+  });
+
+  it("keeps FONT_3x5's existing digit rendering unchanged", () => {
+    const c = new Canvas();
+    drawText(c, '50', 2, 2, 'white', { font: FONT_3x5 });
+    expect(inkColumns(c)).toEqual([2, 3, 4, 6, 7, 8]);
+    expect(measureText('50', { font: FONT_3x5 })).toBe(7);
+  });
+});
+
+describe('FONT_3x5 printable-ASCII coverage', () => {
+  it('defines a glyph for every character FONT_5x7 defines', () => {
+    const missing = Object.keys(FONT_5x7.glyphs).filter((ch) => !FONT_3x5.glyphs[ch]);
+    expect(missing, `FONT_3x5 is missing: ${missing.join(' ')}`).toEqual([]);
+  });
+
+  it('keeps every FONT_3x5 row inside the 3-bit cell', () => {
+    for (const [ch, rows] of Object.entries(FONT_3x5.glyphs)) {
+      rows.forEach((row, i) => {
+        expect(row, `FONT_3x5 '${ch}' row ${i} escapes the cell`).toBeGreaterThanOrEqual(0);
+        expect(row, `FONT_3x5 '${ch}' row ${i} escapes the cell`).toBeLessThanOrEqual(0b111);
+      });
+    }
+  });
+
+  it('keeps every FONT_5x7 row inside the 5-bit cell', () => {
+    for (const [ch, rows] of Object.entries(FONT_5x7.glyphs)) {
+      rows.forEach((row, i) => {
+        expect(row, `FONT_5x7 '${ch}' row ${i} escapes the cell`).toBeGreaterThanOrEqual(0);
+        expect(row, `FONT_5x7 '${ch}' row ${i} escapes the cell`).toBeLessThanOrEqual(0b11111);
+      });
+    }
+  });
+
+  it('gives confusable pairs different bitmaps', () => {
+    for (const [a, b] of CONFUSABLE_PAIRS) {
+      const ga = FONT_3x5.glyphs[a];
+      const gb = FONT_3x5.glyphs[b];
+      expect(ga, `FONT_3x5 missing '${a}'`).toBeDefined();
+      expect(gb, `FONT_3x5 missing '${b}'`).toBeDefined();
+      expect(ga, `'${a}' and '${b}' share a bitmap`).not.toEqual(gb);
+    }
+  });
+
+  it('gives every FONT_3x5 glyph a bitmap no other glyph shares', () => {
+    expect(collisions(FONT_3x5)).toEqual([]);
+  });
+
+  it('gives every FONT_5x7 glyph a bitmap no other glyph shares', () => {
+    expect(collisions(FONT_5x7)).toEqual([]);
+  });
+});
+
+describe('FONT_3x5 lowercase p', () => {
+  it('renders distinctly from uppercase P', () => {
+    const lower = new Canvas();
+    drawText(lower, 'p', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+    const upper = new Canvas();
+    drawText(upper, 'P', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+
+    expect(Buffer.from(lower.buffer).equals(Buffer.from(upper.buffer))).toBe(false);
+  });
+
+  it('sits below the cap line and descends past the other bowls', () => {
+    const rows = FONT_3x5.glyphs['p'];
+    expect(rows).toBeDefined();
+    // Lowercase form: no ink on the cap row, ink on the descender row.
+    expect(rows![0], 'p should not reach the cap line').toBe(0b000);
+    expect(rows![4], 'p should carry a descender stem').toBeGreaterThan(0);
+  });
+
+  it('stays distinct from the glyphs it neighbours in shape', () => {
+    for (const other of ['P', 'b', 'q', '9', 'o']) {
+      expect(FONT_3x5.glyphs['p'], `'p' matches '${other}'`).not.toEqual(FONT_3x5.glyphs[other]);
+    }
+  });
+});
+
+describe('FONT_3x5 missing-glyph fallback', () => {
+  it('renders the ? marker for an unknown character', () => {
+    const unknown = new Canvas();
+    drawText(unknown, '\x01', 0, 0, [255, 255, 255], { font: FONT_3x5 });
+    expect(inkPixels(unknown).length).toBeGreaterThan(0);
+
+    const marker = new Canvas();
+    drawText(marker, '?', 0, 0, [255, 255, 255], { font: FONT_3x5 });
+    expect(Buffer.from(unknown.buffer).equals(Buffer.from(marker.buffer))).toBe(true);
+  });
+
+  it('keeps the fallback visible mid-string', () => {
+    const withUnknown = new Canvas();
+    drawText(withUnknown, 'A\x01B', 1, 1, 'white', { font: FONT_3x5 });
+    const withoutUnknown = new Canvas();
+    drawText(withoutUnknown, 'AB', 1, 1, 'white', { font: FONT_3x5 });
+
+    expect(inkPixels(withUnknown).length).toBeGreaterThan(inkPixels(withoutUnknown).length);
+    expect(inkSpan(withUnknown)!.width).toBe(measureText('A\x01B', { font: FONT_3x5 }));
+    expect(inkSpan(withUnknown)!.width).toBe(measureText('A?B', { font: FONT_3x5 }));
+  });
+
+  it("draws strictly more ink for '50%' than for '50'", () => {
+    const withPercent = new Canvas();
+    drawText(withPercent, '50%', 2, 2, 'white', { font: FONT_3x5 });
+    const withoutPercent = new Canvas();
+    drawText(withoutPercent, '50', 2, 2, 'white', { font: FONT_3x5 });
+
+    expect(inkPixels(withPercent).length).toBeGreaterThan(inkPixels(withoutPercent).length);
+    expect(inkColumns(withPercent)).not.toEqual(inkColumns(withoutPercent));
+    expect(inkSpan(withPercent)!.max).toBeGreaterThan(inkSpan(withoutPercent)!.max);
+  });
+});
+
+describe('FONT_3x5 metrics for the added characters', () => {
+  it('measures each added glyph as its drawn ink span', () => {
+    for (const ch of ADDED_3x5) {
+      const c = new Canvas();
+      drawText(c, ch, 2, 2, [0, 255, 0], { font: FONT_3x5 });
+      const span = inkSpan(c);
+      expect(span, `'${ch}' drew no ink`).not.toBeNull();
+      expect(span!.min, `'${ch}' ink should start at the pen`).toBe(2);
+      expect(span!.width, `'${ch}' ink span should equal measureText`).toBe(
+        measureText(ch, { font: FONT_3x5 }),
+      );
+    }
+  });
+
+  it('measures runs of added characters as their drawn ink span', () => {
+    for (let i = 0; i < ADDED_3x5.length; i += 5) {
+      const run = ADDED_3x5.slice(i, i + 5);
+      const c = new Canvas();
+      drawText(c, run, 1, 1, [0, 255, 0], { font: FONT_3x5 });
+      const span = inkSpan(c);
+      expect(span, `'${run}' drew no ink`).not.toBeNull();
+      expect(span!.min, `'${run}' ink should start at the pen`).toBe(1);
+      expect(span!.width, `'${run}' ink span should equal measureText`).toBe(
+        measureText(run, { font: FONT_3x5 }),
+      );
+    }
+  });
+
+  it('measures and draws an empty string as nothing', () => {
+    const c = new Canvas();
+    expect(measureText('', { font: FONT_3x5 })).toBe(0);
+    expect(drawText(c, '', 0, 0, [255, 0, 0], { font: FONT_3x5 })).toBe(0);
+    expect(inkPixels(c)).toEqual([]);
+  });
+
+  it('scales an added glyph without breaking tight metrics', () => {
+    const one = new Canvas();
+    drawText(one, '%', 0, 0, [255, 0, 0], { font: FONT_3x5 });
+    const two = new Canvas();
+    drawText(two, '%', 0, 0, [255, 0, 0], { font: FONT_3x5, scale: 2 });
+
+    expect(inkPixels(two).length).toBe(inkPixels(one).length * 4);
+    expect(inkSpan(two)!.min).toBe(0);
+    expect(inkSpan(two)!.width).toBe(inkSpan(one)!.width * 2);
+    expect(measureText('%', { font: FONT_3x5, scale: 2 })).toBe(
+      measureText('%', { font: FONT_3x5 }) * 2,
+    );
+  });
+
+  it('honors letterSpacing between added glyphs', () => {
+    const tight = measureText('<>', { font: FONT_3x5, letterSpacing: 0 });
+    const wide = measureText('<>', { font: FONT_3x5, letterSpacing: 3 });
+    expect(wide - tight).toBe(3);
+
+    const c = new Canvas();
+    drawText(c, '<>', 0, 0, [255, 0, 0], { font: FONT_3x5, letterSpacing: 0 });
+    expect(inkSpan(c)!.width).toBe(tight);
   });
 });

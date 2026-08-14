@@ -3,7 +3,7 @@
  *
  * Two built-in sizes:
  * - `FONT_5x7`: 5 wide × 7 tall, full printable ASCII (32–126)
- * - `FONT_3x5`: 3 wide × 5 tall, uppercase, lowercase, digits, basic punctuation
+ * - `FONT_3x5`: 3 wide × 5 tall, the same printable ASCII range in a compact cell
  *
  * Glyph data is stored as arrays of bitmask rows (one number per row).
  * For a 5-wide font, bit 4 = leftmost pixel, bit 0 = rightmost.
@@ -134,7 +134,7 @@ export const FONT_5x7: BitmapFont = {
   glyphs: GLYPHS_5x7,
 };
 
-// --- 3×5 compact font (digits, uppercase, lowercase, basic punctuation) ---
+// --- 3×5 compact font, full printable ASCII (32–126) ---
 
 const GLYPHS_3x5: Record<string, readonly number[]> = {
   ' ': [0b000, 0b000, 0b000, 0b000, 0b000],
@@ -147,6 +147,24 @@ const GLYPHS_3x5: Record<string, readonly number[]> = {
   '/': [0b001, 0b001, 0b010, 0b100, 0b100],
   '(': [0b010, 0b100, 0b100, 0b100, 0b010],
   ')': [0b010, 0b001, 0b001, 0b001, 0b010],
+
+  // Symbols with no faithful 3×5 form — suggestive marks chosen for LED legibility:
+  // '%' keeps the diagonal plus one counter per side, '&' a figure-eight with a tail,
+  // '@' a ring with a sweeping tail, '~' a two-cell wave.
+  '"': [0b101, 0b101, 0b000, 0b000, 0b000],
+  '#': [0b101, 0b111, 0b101, 0b111, 0b101],
+  $: [0b011, 0b110, 0b010, 0b011, 0b110],
+  '%': [0b100, 0b001, 0b010, 0b100, 0b001],
+  '&': [0b010, 0b101, 0b010, 0b101, 0b011],
+  "'": [0b010, 0b010, 0b000, 0b000, 0b000],
+  '*': [0b000, 0b101, 0b010, 0b101, 0b000],
+  ';': [0b000, 0b010, 0b000, 0b010, 0b100],
+  '<': [0b001, 0b010, 0b100, 0b010, 0b001],
+  '=': [0b000, 0b111, 0b000, 0b111, 0b000],
+  '>': [0b100, 0b010, 0b001, 0b010, 0b100],
+  '?': [0b111, 0b001, 0b010, 0b000, 0b010],
+  '@': [0b111, 0b101, 0b111, 0b100, 0b011],
+
   '0': [0b111, 0b101, 0b101, 0b101, 0b111],
   '1': [0b010, 0b110, 0b010, 0b010, 0b111],
   '2': [0b111, 0b001, 0b111, 0b100, 0b111],
@@ -184,6 +202,13 @@ const GLYPHS_3x5: Record<string, readonly number[]> = {
   Y: [0b101, 0b101, 0b010, 0b010, 0b010],
   Z: [0b111, 0b001, 0b010, 0b100, 0b111],
 
+  '[': [0b110, 0b100, 0b100, 0b100, 0b110],
+  '\\': [0b100, 0b100, 0b010, 0b001, 0b001],
+  ']': [0b011, 0b001, 0b001, 0b001, 0b011],
+  '^': [0b010, 0b101, 0b000, 0b000, 0b000],
+  _: [0b000, 0b000, 0b000, 0b000, 0b111],
+  '`': [0b100, 0b010, 0b000, 0b000, 0b000],
+
   // Lowercase — ascender/descender/body forms for 3×5 grid
   a: [0b000, 0b010, 0b101, 0b111, 0b101],
   b: [0b100, 0b100, 0b110, 0b101, 0b110],
@@ -200,7 +225,9 @@ const GLYPHS_3x5: Record<string, readonly number[]> = {
   m: [0b000, 0b111, 0b111, 0b101, 0b101],
   n: [0b000, 0b110, 0b101, 0b101, 0b101],
   o: [0b000, 0b010, 0b101, 0b101, 0b010],
-  p: [0b110, 0b101, 0b110, 0b100, 0b100],
+  // 'p' starts a row below the cap line so its bowl plus one-row descender stay
+  // clear of 'P', which fills the same three columns from the top row down.
+  p: [0b000, 0b110, 0b101, 0b110, 0b100],
   q: [0b011, 0b101, 0b011, 0b001, 0b001],
   r: [0b000, 0b000, 0b011, 0b100, 0b100],
   s: [0b000, 0b011, 0b100, 0b001, 0b110],
@@ -211,6 +238,13 @@ const GLYPHS_3x5: Record<string, readonly number[]> = {
   x: [0b000, 0b000, 0b101, 0b010, 0b101],
   y: [0b101, 0b101, 0b011, 0b001, 0b110],
   z: [0b000, 0b111, 0b001, 0b010, 0b111],
+
+  // Braces take a mid-row notch — three columns cannot hold the square-bracket
+  // construction twice without '{' and '}' colliding with '[' and ']'.
+  '{': [0b011, 0b010, 0b100, 0b010, 0b011],
+  '|': [0b010, 0b010, 0b010, 0b010, 0b010],
+  '}': [0b110, 0b010, 0b001, 0b010, 0b110],
+  '~': [0b000, 0b110, 0b011, 0b000, 0b000],
 };
 
 export const FONT_3x5: BitmapFont = {
