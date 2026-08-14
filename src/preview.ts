@@ -63,23 +63,44 @@ function makeChunk(type: string, data: Uint8Array): Uint8Array {
   return chunk;
 }
 
-function encodePng(width: number, height: number, rgb: Uint8Array): Uint8Array {
+/** Pixel channel count: 3 = RGB (color type 2), 4 = RGBA (color type 6). */
+type Channels = 3 | 4;
+
+/**
+ * Reject a scale that is not a positive integer before any allocation or
+ * encoding. Zero and NaN would emit a 0×0 PNG, a negative factor a header
+ * declaring ~4 billion pixels per side, and a fraction uneven
+ * nearest-neighbor blocks — all written to disk without an error.
+ */
+function assertScale(method: string, scale: number): void {
+  if (!Number.isInteger(scale) || scale < 1) {
+    throw new RangeError(`${method} scale must be a positive integer`);
+  }
+}
+
+function encodePng(
+  width: number,
+  height: number,
+  pixels: Uint8Array,
+  channels: Channels,
+): Uint8Array {
   // IHDR
   const ihdr = new Uint8Array(13);
   writeU32BE(ihdr, 0, width);
   writeU32BE(ihdr, 4, height);
   ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // color type: RGB
+  ihdr[9] = channels === 4 ? 6 : 2; // color type: RGBA / RGB
   ihdr[10] = 0; // compression
   ihdr[11] = 0; // filter
   ihdr[12] = 0; // interlace
 
   // IDAT: filter byte (0 = None) prepended to each row
-  const raw = new Uint8Array(height * (1 + width * 3));
+  const stride = width * channels;
+  const raw = new Uint8Array(height * (1 + stride));
   for (let y = 0; y < height; y++) {
-    const rowOffset = y * (1 + width * 3);
+    const rowOffset = y * (1 + stride);
     raw[rowOffset] = 0; // filter: None
-    raw.set(rgb.subarray(y * width * 3, (y + 1) * width * 3), rowOffset + 1);
+    raw.set(pixels.subarray(y * stride, (y + 1) * stride), rowOffset + 1);
   }
   const compressed = deflateSync(raw);
 
@@ -100,47 +121,73 @@ function encodePng(width: number, height: number, rgb: Uint8Array): Uint8Array {
   return png;
 }
 
-/** Nearest-neighbor upscale. */
-function upscale(rgb: Uint8Array, srcW: number, srcH: number, scale: number): Uint8Array {
+/** Nearest-neighbor upscale of a `channels`-byte-per-pixel buffer. */
+function upscale(
+  pixels: Uint8Array,
+  srcW: number,
+  srcH: number,
+  scale: number,
+  channels: Channels,
+): Uint8Array {
   const dstW = srcW * scale;
   const dstH = srcH * scale;
-  const out = new Uint8Array(dstW * dstH * 3);
+  const out = new Uint8Array(dstW * dstH * channels);
   for (let y = 0; y < dstH; y++) {
     for (let x = 0; x < dstW; x++) {
-      const si = (Math.floor(y / scale) * srcW + Math.floor(x / scale)) * 3;
-      const di = (y * dstW + x) * 3;
-      out[di] = rgb[si]!;
-      out[di + 1] = rgb[si + 1]!;
-      out[di + 2] = rgb[si + 2]!;
+      const si = (Math.floor(y / scale) * srcW + Math.floor(x / scale)) * channels;
+      const di = (y * dstW + x) * channels;
+      for (let c = 0; c < channels; c++) {
+        out[di + c] = pixels[si + c]!;
+      }
     }
   }
   return out;
 }
 
+/** PNG export options. */
+export interface PngOptions {
+  /**
+   * Encode RGBA (color type 6) straight from the canvas buffer, preserving
+   * transparency. The default flattens alpha over black — what the panel
+   * shows — so a half-transparent pixel dims toward the unlit LED.
+   */
+  alpha?: boolean;
+}
+
 /**
  * Encode a Canvas as a PNG buffer.
- * @param scale - Nearest-neighbor upscale factor (default: 1).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 1).
+ * @throws {RangeError} When the scale is not a positive integer.
  */
-export function canvasToPng(canvas: Canvas, scale = 1): Uint8Array {
-  const w = canvas.width * scale;
-  const h = canvas.height * scale;
-  const flat = canvas.toRgbBuffer();
-  const rgb = scale === 1 ? flat : upscale(flat, canvas.width, canvas.height, scale);
-  return encodePng(w, h, rgb);
+export function canvasToPng(canvas: Canvas, scale = 1, options?: PngOptions): Uint8Array {
+  assertScale('canvasToPng', scale);
+  const channels: Channels = options?.alpha ? 4 : 3;
+  const source = options?.alpha ? canvas.buffer : canvas.toRgbBuffer();
+  const pixels =
+    scale === 1 ? source : upscale(source, canvas.width, canvas.height, scale, channels);
+  return encodePng(canvas.width * scale, canvas.height * scale, pixels, channels);
 }
 
 /**
  * Save a Canvas as a PNG file.
- * @param scale - Nearest-neighbor upscale factor (default: 8 → 512×512).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 8 → 512×512).
+ * @throws {RangeError} When the scale is not a positive integer — nothing is written.
  */
-export async function savePng(canvas: Canvas, path: string, scale = 8): Promise<void> {
-  const png = canvasToPng(canvas, scale);
+export async function savePng(
+  canvas: Canvas,
+  path: string,
+  scale = 8,
+  options?: PngOptions,
+): Promise<void> {
+  assertScale('savePng', scale);
+  const png = canvasToPng(canvas, scale, options);
   await writeFile(path, png);
 }
 
 /**
  * Save animation frames as individual PNGs.
  * Files named `{basePath}_000.png`, `{basePath}_001.png`, etc.
+ * @param scale - Forwarded to `savePng`, which validates it.
  */
 export async function saveAnimationPngs(
   frames: Canvas[],
@@ -170,8 +217,9 @@ function rgbToRgba(rgb: Uint8Array): Uint8Array {
 /**
  * Encode animation frames as an animated GIF buffer.
  * @param speed - Delay between frames in milliseconds.
- * @param scale - Nearest-neighbor upscale factor (default: 8 → 512×512).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 8 → 512×512).
  * @param maxColors - Max palette colors per frame (default: 256).
+ * @throws {RangeError} When the scale is not a positive integer.
  */
 export function encodeAnimationGif(
   frames: Canvas[],
@@ -179,6 +227,7 @@ export function encodeAnimationGif(
   scale = 8,
   maxColors = 256,
 ): Uint8Array {
+  assertScale('encodeAnimationGif', scale);
   const first = frames[0];
   if (!first) throw new Error('encodeAnimationGif requires at least one frame');
   assertAnimationFrameDimensions(frames);
@@ -189,7 +238,7 @@ export function encodeAnimationGif(
 
   for (const frame of frames) {
     const flat = frame.toRgbBuffer();
-    const rgb = scale === 1 ? flat : upscale(flat, frame.width, frame.height, scale);
+    const rgb = scale === 1 ? flat : upscale(flat, frame.width, frame.height, scale, 3);
     const rgba = rgbToRgba(rgb);
     const palette = quantize(rgba, maxColors);
     const index = applyPalette(rgba, palette);
@@ -203,8 +252,9 @@ export function encodeAnimationGif(
 /**
  * Save animation frames as an animated GIF file.
  * @param speed - Delay between frames in milliseconds.
- * @param scale - Nearest-neighbor upscale factor (default: 8 → 512×512).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 8 → 512×512).
  * @param maxColors - Max palette colors per frame (default: 256).
+ * @throws {RangeError} When the scale is not a positive integer — nothing is written.
  */
 export async function saveAnimationGif(
   frames: Canvas[],
@@ -213,6 +263,7 @@ export async function saveAnimationGif(
   scale = 8,
   maxColors = 256,
 ): Promise<void> {
+  assertScale('saveAnimationGif', scale);
   const gif = encodeAnimationGif(frames, speed, scale, maxColors);
   await writeFile(path, gif);
 }

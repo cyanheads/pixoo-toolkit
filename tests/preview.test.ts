@@ -1,8 +1,16 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateSync } from 'node:zlib';
 import { describe, it, expect } from 'vitest';
-import { canvasToPng, encodeAnimationGif, saveAnimationGif } from '../src/preview.js';
+import {
+  canvasToPng,
+  encodeAnimationGif,
+  saveAnimationGif,
+  saveAnimationPngs,
+  savePng,
+} from '../src/preview.js';
 import { Canvas } from '../src/canvas.js';
 
 function readGifDimensions(gif: Uint8Array): {
@@ -39,6 +47,89 @@ function readGifDimensions(gif: Uint8Array): {
 
   return { screen, frames };
 }
+
+interface DecodedPng {
+  width: number;
+  height: number;
+  bitDepth: number;
+  colorType: number;
+  channels: number;
+  /** Inflated IDAT stream — one filter byte per row followed by the row's samples. */
+  raw: Uint8Array;
+  filterBytes: number[];
+  pixel: (x: number, y: number) => number[];
+}
+
+/** Parse a PNG down to its inflated pixel bytes — no decoding shortcuts. */
+function decodePng(png: Uint8Array): DecodedPng {
+  const readU32 = (offset: number) =>
+    ((png[offset]! << 24) >>> 0) +
+    (png[offset + 1]! << 16) +
+    (png[offset + 2]! << 8) +
+    png[offset + 3]!;
+
+  const idat: Uint8Array[] = [];
+  let offset = 8; // PNG signature
+  let ihdr: Uint8Array | undefined;
+  while (offset < png.length) {
+    const length = readU32(offset);
+    const type = String.fromCharCode(
+      png[offset + 4]!,
+      png[offset + 5]!,
+      png[offset + 6]!,
+      png[offset + 7]!,
+    );
+    const data = png.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') ihdr = data;
+    if (type === 'IDAT') idat.push(data);
+    offset += 12 + length;
+  }
+  if (!ihdr) throw new Error('PNG has no IHDR chunk');
+
+  const width = readU32(16);
+  const height = readU32(20);
+  const colorType = ihdr[9]!;
+  const channels = colorType === 6 ? 4 : 3;
+  const raw = new Uint8Array(inflateSync(Buffer.concat(idat.map((c) => Buffer.from(c)))));
+  const stride = 1 + width * channels;
+
+  return {
+    width,
+    height,
+    bitDepth: ihdr[8]!,
+    colorType,
+    channels,
+    raw,
+    filterBytes: Array.from({ length: height }, (_, y) => raw[y * stride]!),
+    pixel: (x, y) =>
+      Array.from(raw.subarray(y * stride + 1 + x * channels, y * stride + 1 + (x + 1) * channels)),
+  };
+}
+
+const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+
+async function withTempDir<T>(fn: (directory: string) => Promise<T>): Promise<T> {
+  const directory = await mkdtemp(join(tmpdir(), 'pixoo-toolkit-preview-'));
+  try {
+    return await fn(directory);
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+}
+
+/**
+ * Non-trivial canvas mixing opaque fills with the exact pair #33 names: a
+ * half-transparent white pixel at (3,12) and an opaque mid-grey at (4,12).
+ */
+function figureCanvas(): Canvas {
+  return new Canvas(16)
+    .fillRect(0, 0, 16, 8, [10, 20, 30])
+    .fillCircle(8, 4, 3, 'red')
+    .blendPixel(3, 12, 'white', 0.5)
+    .setPixel(4, 12, [128, 128, 128]);
+}
+
+const INVALID_SCALES = [0, -1, 1.5, NaN, Infinity, -Infinity];
 
 describe('canvasToPng', () => {
   it('produces valid PNG signature', () => {
@@ -195,5 +286,217 @@ describe('encodeAnimationGif', () => {
     } finally {
       await rm(directory, { recursive: true });
     }
+  });
+});
+
+describe('canvasToPng default RGB output', () => {
+  it('encodes the recorded RGB byte stream', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas()));
+
+    expect(decoded.colorType).toBe(2);
+    expect(decoded.bitDepth).toBe(8);
+    expect(decoded.width).toBe(16);
+    expect(decoded.height).toBe(16);
+    expect(decoded.channels).toBe(3);
+    expect(decoded.raw.length).toBe(16 * (1 + 16 * 3));
+    expect(decoded.filterBytes).toEqual(Array(16).fill(0));
+    expect(sha256(decoded.raw)).toBe(
+      'a92689b64a8468e64b1fb929703c9ad50e31b763514f8553864e5fbf165ddfe7',
+    );
+  });
+
+  it('keeps flattening alpha over black', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas()));
+
+    expect(decoded.pixel(0, 0)).toEqual([10, 20, 30]);
+    expect(decoded.pixel(8, 4)).toEqual([255, 0, 0]);
+    // Untouched pixels flatten to the unlit LED.
+    expect(decoded.pixel(0, 15)).toEqual([0, 0, 0]);
+  });
+
+  it('renders a half-transparent white pixel identically to an opaque mid-grey', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas()));
+
+    expect(decoded.pixel(3, 12)).toEqual([128, 128, 128]);
+    expect(decoded.pixel(3, 12)).toEqual(decoded.pixel(4, 12));
+  });
+
+  it('encodes the recorded RGB byte stream at scale 4', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas(), 4));
+
+    expect(decoded.colorType).toBe(2);
+    expect(decoded.width).toBe(64);
+    expect(decoded.height).toBe(64);
+    expect(decoded.raw.length).toBe(64 * (1 + 64 * 3));
+    expect(sha256(decoded.raw)).toBe(
+      'e1075f2fa340061b641b09123345a3883a73235360fa67ce851afe7aa84aaa92',
+    );
+  });
+});
+
+describe('canvasToPng alpha mode', () => {
+  it('encodes RGBA color type 6 with a 4-channel stride', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas(), 1, { alpha: true }));
+
+    expect(decoded.colorType).toBe(6);
+    expect(decoded.bitDepth).toBe(8);
+    expect(decoded.width).toBe(16);
+    expect(decoded.height).toBe(16);
+    expect(decoded.raw.length).toBe(16 * (1 + 16 * 4));
+    expect(decoded.filterBytes).toEqual(Array(16).fill(0));
+  });
+
+  it('preserves a half-transparent pixel through the round trip', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas(), 1, { alpha: true }));
+
+    expect(decoded.pixel(3, 12)).toEqual([255, 255, 255, 128]);
+    expect(decoded.pixel(4, 12)).toEqual([128, 128, 128, 255]);
+    expect(decoded.pixel(0, 0)).toEqual([10, 20, 30, 255]);
+    // Never-drawn pixels stay fully transparent rather than flattening to black.
+    expect(decoded.pixel(0, 15)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('distinguishes the pixels the default mode collapses', () => {
+    const flattened = decodePng(canvasToPng(figureCanvas()));
+    const rgba = decodePng(canvasToPng(figureCanvas(), 1, { alpha: true }));
+
+    expect(flattened.pixel(3, 12)).toEqual(flattened.pixel(4, 12));
+    expect(rgba.pixel(3, 12)).not.toEqual(rgba.pixel(4, 12));
+  });
+
+  it('upscales all four channels', () => {
+    const decoded = decodePng(canvasToPng(figureCanvas(), 3, { alpha: true }));
+
+    expect(decoded.colorType).toBe(6);
+    expect(decoded.width).toBe(48);
+    expect(decoded.height).toBe(48);
+    expect(decoded.raw.length).toBe(48 * (1 + 48 * 4));
+    for (const [x, y] of [
+      [9, 36],
+      [11, 38],
+    ] as const) {
+      expect(decoded.pixel(x, y)).toEqual([255, 255, 255, 128]);
+    }
+    expect(decoded.pixel(12, 36)).toEqual([128, 128, 128, 255]);
+  });
+
+  it('leaves the default output untouched when alpha is not requested', () => {
+    const implicit = canvasToPng(figureCanvas());
+    const explicit = canvasToPng(figureCanvas(), 1, { alpha: false });
+
+    expect(Buffer.from(explicit).equals(Buffer.from(implicit))).toBe(true);
+  });
+
+  it('writes an RGBA file through savePng', async () => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'alpha.png');
+      await savePng(figureCanvas(), path, 1, { alpha: true });
+      const decoded = decodePng(new Uint8Array(await readFile(path)));
+
+      expect(decoded.colorType).toBe(6);
+      expect(decoded.pixel(3, 12)).toEqual([255, 255, 255, 128]);
+    });
+  });
+
+  it('writes a flattened RGB file through savePng by default', async () => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'device.png');
+      await savePng(figureCanvas(), path, 1);
+      const decoded = decodePng(new Uint8Array(await readFile(path)));
+
+      expect(decoded.colorType).toBe(2);
+      expect(decoded.pixel(3, 12)).toEqual([128, 128, 128]);
+    });
+  });
+});
+
+describe('scale validation', () => {
+  it.each(INVALID_SCALES)('canvasToPng rejects scale %s', (scale) => {
+    const encode = () => canvasToPng(new Canvas(16), scale);
+    expect(encode).toThrow(RangeError);
+    expect(encode).toThrow('canvasToPng scale must be a positive integer');
+  });
+
+  it.each(INVALID_SCALES)('encodeAnimationGif rejects scale %s', (scale) => {
+    const encode = () => encodeAnimationGif([new Canvas(16)], 100, scale);
+    expect(encode).toThrow(RangeError);
+    expect(encode).toThrow('encodeAnimationGif scale must be a positive integer');
+  });
+
+  it.each(INVALID_SCALES)('savePng rejects scale %s without writing a file', async (scale) => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'frame.png');
+      await expect(savePng(new Canvas(16), path, scale)).rejects.toThrow(RangeError);
+      await expect(savePng(new Canvas(16), path, scale)).rejects.toThrow(
+        'savePng scale must be a positive integer',
+      );
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  it.each(INVALID_SCALES)(
+    'saveAnimationGif rejects scale %s without writing a file',
+    async (scale) => {
+      await withTempDir(async (directory) => {
+        const path = join(directory, 'animation.gif');
+        await expect(saveAnimationGif([new Canvas(16)], path, 100, scale)).rejects.toThrow(
+          RangeError,
+        );
+        await expect(saveAnimationGif([new Canvas(16)], path, 100, scale)).rejects.toThrow(
+          'saveAnimationGif scale must be a positive integer',
+        );
+        await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+      });
+    },
+  );
+
+  it.each(INVALID_SCALES)(
+    'saveAnimationPngs inherits the savePng guard for scale %s',
+    async (scale) => {
+      await withTempDir(async (directory) => {
+        const basePath = join(directory, 'frame');
+        await expect(
+          saveAnimationPngs([new Canvas(16), new Canvas(16)], basePath, scale),
+        ).rejects.toThrow('savePng scale must be a positive integer');
+        expect(await readdir(directory)).toEqual([]);
+      });
+    },
+  );
+
+  it('does not overwrite an existing file when the scale is invalid', async () => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'frame.png');
+      const original = Buffer.from('existing file');
+      await writeFile(path, original);
+      await expect(savePng(new Canvas(16), path, 0)).rejects.toThrow(RangeError);
+      expect(await readFile(path)).toEqual(original);
+    });
+  });
+
+  it.each([1, 3])('accepts scale %i', (scale) => {
+    const decoded = decodePng(canvasToPng(new Canvas(16), scale));
+    expect(decoded.width).toBe(16 * scale);
+    expect(decoded.height).toBe(16 * scale);
+
+    const gif = readGifDimensions(encodeAnimationGif([new Canvas(16)], 100, scale));
+    expect(gif.screen).toEqual([16 * scale, 16 * scale]);
+  });
+
+  it('writes files for a valid scale', async () => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'frame.png');
+      await savePng(new Canvas(16), path, 2);
+      expect(decodePng(new Uint8Array(await readFile(path))).width).toBe(32);
+
+      const paths = await saveAnimationPngs(
+        [new Canvas(16), new Canvas(16)],
+        join(directory, 'anim'),
+        2,
+      );
+      expect(paths).toHaveLength(2);
+      for (const framePath of paths) {
+        expect(decodePng(new Uint8Array(await readFile(framePath))).width).toBe(32);
+      }
+    });
   });
 });
