@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.8] — 2026-08-13
+
+### Added
+
+- Agent Skills (`skills/`) for `git-wrapup`, `release-and-publish`, and `report-issue-local`; `bun run list-skills` prints their index with absolute paths.
+- `.github` community health files: `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`, `FUNDING.yml`.
+- `engines` field in `package.json` pinning Node `>=20.9.0` and Bun `>=1.3.0`, matching the floor `README.md` already documented.
+
+### Changed
+
+- **canvas:** `getPixel()` now derives from `getPixelRgba()` instead of duplicating bounds/index logic.
+- **color:** `tryResolveColor()` branches on `typeof` instead of `Array.isArray` plus a cast.
+- **font:** dropped the `G()` identity-wrapper around glyph bitmask arrays; imports moved to the top of the file.
+- **image:** `downsampleSprite()` and `renderSprite()` factor shared `isDark`/`sameRgb` helpers out of duplicated per-channel comparisons.
+- **svg-path:** `fillSubpaths()` fills scanline spans with `Canvas.drawLineH()` instead of a per-pixel `setPixel` loop.
+
 ## [0.7.7] — 2026-08-13
 
 ### Fixed
