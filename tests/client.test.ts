@@ -185,9 +185,7 @@ describe('PixooClient.send', () => {
   it('returns a timeout failure on AbortError', async () => {
     const fetchMock = vi
       .fn()
-      .mockRejectedValue(
-        Object.assign(new DOMException('The operation was aborted', 'AbortError')),
-      );
+      .mockRejectedValue(new DOMException('The operation was aborted', 'AbortError'));
     globalThis.fetch = fetchMock;
     const client = new PixooClient(TEST_IP, { timeout: 100, retries: 0 });
     const res = await client.send('Channel/GetAllConf');
@@ -215,11 +213,7 @@ describe('PixooClient.send', () => {
     globalThis.fetch = vi.fn().mockImplementation(() => {
       calls++;
       if (calls === 1) return Promise.reject(new Error('ECONNRESET'));
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: 0 }),
-      });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
     });
     const client = new PixooClient(TEST_IP, { retries: 1, retryDelay: 10 });
     const res = await client.send('Channel/GetAllConf');
@@ -426,11 +420,7 @@ describe('PixooClient.push', () => {
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
       const body = JSON.parse(opts.body);
       calls.push(body.Command);
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: 0 }),
-      });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
     });
 
     const client = new PixooClient(TEST_IP);
@@ -444,11 +434,7 @@ describe('PixooClient.push', () => {
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
       bodies.push(JSON.parse(opts.body));
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: 0 }),
-      });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
     });
 
     const canvas = new Canvas();
@@ -468,11 +454,7 @@ describe('PixooClient.push', () => {
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
       bodies.push(JSON.parse(opts.body));
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: 0 }),
-      });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
     });
 
     const canvas = new Canvas();
@@ -491,11 +473,7 @@ describe('PixooClient.push', () => {
       const body = JSON.parse(opts.body) as Record<string, unknown>;
       bodies.push(body);
       const errorCode = body['Command'] === 'Draw/ResetHttpGifId' ? 5 : 0;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: errorCode }),
-      });
+      return Promise.resolve(mockResponse({ error_code: errorCode }));
     });
 
     const client = new PixooClient(TEST_IP, { retries: 0 });
@@ -580,11 +558,7 @@ describe('PixooClient.pushAnimation', () => {
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
       bodies.push(JSON.parse(opts.body));
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: 0 }),
-      });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
     });
 
     const frames = [new Canvas(), new Canvas(), new Canvas()];
@@ -609,11 +583,7 @@ describe('PixooClient.pushAnimation', () => {
       const body = JSON.parse(opts.body) as Record<string, unknown>;
       bodies.push(body);
       const errorCode = body['Command'] === 'Draw/ResetHttpGifId' ? 5 : 0;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: errorCode }),
-      });
+      return Promise.resolve(mockResponse({ error_code: errorCode }));
     });
 
     const client = new PixooClient(TEST_IP, { retries: 0 });
@@ -628,11 +598,7 @@ describe('PixooClient.pushAnimation', () => {
       callCount++;
       // Fail on the second SendHttpGif (3rd call overall: reset, frame0, frame1)
       const errorCode = callCount === 3 ? 5 : 0;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ error_code: errorCode }),
-      });
+      return Promise.resolve(mockResponse({ error_code: errorCode }));
     });
 
     const frames = [new Canvas(), new Canvas(), new Canvas()];

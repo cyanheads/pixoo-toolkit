@@ -108,11 +108,8 @@ export class Canvas {
    * Returns [0,0,0] for out-of-bounds.
    */
   getPixel(x: number, y: number): RGB {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
-    if (!this.inBounds(ix, iy)) return [0, 0, 0];
-    const i = this.idx(ix, iy);
-    return [this.buffer[i]!, this.buffer[i + 1]!, this.buffer[i + 2]!];
+    const [r, g, b] = this.getPixelRgba(x, y);
+    return [r, g, b];
   }
 
   /** Get a pixel's stored RGBA. Returns [0,0,0,0] for out-of-bounds. */

@@ -442,7 +442,7 @@ export function parseSvgPath(d: string): Point[] {
 export function fillSubpaths(canvas: Canvas, subpaths: readonly Point[][], color: ColorLike): void {
   const rings = subpaths.filter((ring) => ring.length >= 3);
   if (rings.length === 0) return;
-  const [r, g, b] = resolveColor(color);
+  const rgb = resolveColor(color);
 
   // Find bounding box
   let minY = Infinity,
@@ -479,9 +479,7 @@ export function fillSubpaths(canvas: Canvas, subpaths: readonly Point[][], color
     for (let i = 0; i + 1 < intersections.length; i += 2) {
       const xStart = Math.max(0, Math.ceil(intersections[i]!));
       const xEnd = Math.min(canvas.width - 1, Math.floor(intersections[i + 1]!));
-      for (let x = xStart; x <= xEnd; x++) {
-        canvas.setPixel(x, y, [r, g, b]);
-      }
+      canvas.drawLineH(xStart, y, xEnd - xStart + 1, rgb);
     }
   }
 }

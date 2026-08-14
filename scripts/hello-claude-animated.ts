@@ -22,9 +22,6 @@ const eyeColor: RGB = [20, 12, 12];
 // Load base sprite
 const sprite = await downsampleSprite('assets/clawd.png', 10, 8);
 
-// Shift the whole sprite left/right by nudging the render offset
-// Bounce: shift Y offset
-
 // Animation: 20 frames
 // 0-3:   idle
 // 4-5:   bounce up
@@ -60,14 +57,17 @@ const anim = buildAnimation(FRAMES, SPEED, (frame, i) => {
     dx = 2; // lean right
   } else if (i === 11 || i === 15) {
     dx = 3; // lean more right
-  } else if (winking) {
-    if (i === 16 || i === 17) dy = -2; // bounce up + wink
+  } else if (i === 16 || i === 17) {
+    dy = -2; // bounce up + wink
   }
+
+  const spriteX = Math.floor((64 - 10 * 4) / 2) + dx;
+  const spriteY = 24 + dy;
 
   renderSprite(frame, sprite.grid, {
     scale: 4,
-    x: Math.floor((64 - 10 * 4) / 2) + dx,
-    y: 24 + dy,
+    x: spriteX,
+    y: spriteY,
     bodyColor: claudeOrange,
     originalBodyColor: sprite.bodyColor,
     darkColor: eyeColor,
@@ -76,11 +76,9 @@ const anim = buildAnimation(FRAMES, SPEED, (frame, i) => {
 
   // Half-wink: cover bottom half of right eye with body color
   if (winking) {
-    const spriteOx = Math.floor((64 - 10 * 4) / 2) + dx;
-    const spriteOy = 24 + dy;
     // Right eye is at grid col 7, row 2. At scale 4: pixel (7*4, 2*4) relative to sprite origin
-    const eyeX = spriteOx + 7 * 4;
-    const eyeY = spriteOy + 2 * 4;
+    const eyeX = spriteX + 7 * 4;
+    const eyeY = spriteY + 2 * 4;
     // Cover bottom 2px of the 4px-tall eye
     frame.fillRect(eyeX, eyeY + 2, 4, 2, claudeOrange);
   }

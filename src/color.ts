@@ -83,15 +83,9 @@ function clampByte(v: number): number {
  * are clamped to 0–255 integers).
  */
 export function tryResolveColor(c: ColorLike): RGB | null {
-  if (Array.isArray(c)) {
-    return [clampByte(c[0] ?? 0), clampByte(c[1] ?? 0), clampByte(c[2] ?? 0)];
-  }
   if (typeof c === 'number') return hexToRgb(c);
-  // c is string here — TS needs this guard since Array.isArray doesn't narrow readonly tuples
-  const s = c as string;
-  const named = NAMED_COLORS[s.toLowerCase()];
-  if (named) return named;
-  return parseHexString(s);
+  if (typeof c === 'string') return NAMED_COLORS[c.toLowerCase()] ?? parseHexString(c);
+  return [clampByte(c[0] ?? 0), clampByte(c[1] ?? 0), clampByte(c[2] ?? 0)];
 }
 
 /**

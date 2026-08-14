@@ -123,6 +123,9 @@ export async function downsampleSprite(
   const isVisible = (p: ReturnType<typeof px>) =>
     p.a > alphaThresh && !(p.r > whiteThresh && p.g > whiteThresh && p.b > whiteThresh);
 
+  const isDark = (p: ReturnType<typeof px>) =>
+    p.r < darkThresh && p.g < darkThresh && p.b < darkThresh;
+
   // Find bounding box of visible content
   let minX = width,
     minY = height,
@@ -164,7 +167,7 @@ export async function downsampleSprite(
     for (let x = minX; x <= maxX; x++) {
       const p = px(x, y);
       if (!isVisible(p)) continue;
-      if (p.r < darkThresh && p.g < darkThresh && p.b < darkThresh) {
+      if (isDark(p)) {
         darkR += p.r;
         darkG += p.g;
         darkB += p.b;
@@ -216,11 +219,7 @@ export async function downsampleSprite(
       if (!isVisible(p)) {
         row.push({ color: null });
       } else {
-        if (p.r < darkThresh && p.g < darkThresh && p.b < darkThresh) {
-          row.push({ color: darkColor });
-        } else {
-          row.push({ color: bodyColor });
-        }
+        row.push({ color: isDark(p) ? darkColor : bodyColor });
       }
     }
     grid.push(row);
@@ -228,6 +227,8 @@ export async function downsampleSprite(
 
   return { grid, bodyColor, darkColor, cols, rows };
 }
+
+const sameRgb = (a: RGB, b: RGB): boolean => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
 /**
  * Render a downsampled sprite grid onto a Canvas at a given scale and position.
@@ -265,22 +266,10 @@ export function renderSprite(
 
       let color = cell.color;
       // Allow color overrides
-      if (
-        opts.bodyColor &&
-        opts.originalBodyColor &&
-        color[0] === opts.originalBodyColor[0] &&
-        color[1] === opts.originalBodyColor[1] &&
-        color[2] === opts.originalBodyColor[2]
-      ) {
+      if (opts.bodyColor && opts.originalBodyColor && sameRgb(color, opts.originalBodyColor)) {
         color = opts.bodyColor;
       }
-      if (
-        opts.darkColor &&
-        opts.originalDarkColor &&
-        color[0] === opts.originalDarkColor[0] &&
-        color[1] === opts.originalDarkColor[1] &&
-        color[2] === opts.originalDarkColor[2]
-      ) {
+      if (opts.darkColor && opts.originalDarkColor && sameRgb(color, opts.originalDarkColor)) {
         color = opts.darkColor;
       }
 

@@ -26,14 +26,6 @@ const { GIFEncoder, quantize, applyPalette } = gifenc;
 const TEXT_ENCODER = new TextEncoder();
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
-function crc32(data: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (let i = 0; i < data.length; i++) {
-    crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ data[i]!) & 0xff]!;
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -45,6 +37,14 @@ const CRC_TABLE = (() => {
   }
   return table;
 })();
+
+function crc32(data: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < data.length; i++) {
+    crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ data[i]!) & 0xff]!;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
 
 function writeU32BE(buf: Uint8Array, offset: number, value: number): void {
   buf[offset] = (value >>> 24) & 0xff;
