@@ -30,7 +30,7 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 | **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success. Pushed canvases must match the configured display size, and `minPushInterval` spaces frames to respect the firmware's push limit |
 | **Image Loading** | Alpha-preserving resize to canvas via sharp, sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
-| **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves and elliptical arcs) and rasterize with even-odd scanline fill — multi-subpath holes |
+| **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves and elliptical arcs) and rasterize with even-odd scanline fill — multi-subpath holes — or as 1-pixel strokes, for the `fill="none"` outline icons most icon sets ship |
 | **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling at any positive integer scale. PNG defaults to alpha flattened over black — what the panel shows — with `{ alpha: true }` to keep the alpha channel instead |
 
 ## Getting Started
@@ -127,6 +127,24 @@ renderSprite(c, sprite.grid, { scale: 4, y: 24 });
 await savePng(c, 'output/sprite.png');
 ```
 
+### SVG Paths
+
+Pass the `d` attribute and the source `viewBox`; the path is scaled into the target rect.
+
+```typescript
+import { Canvas, renderSvgPath } from '@cyanheads/pixoo-toolkit';
+
+const canvas = new Canvas();
+
+// Filled path — even-odd, so nested subpaths cut holes
+renderSvgPath(canvas, filledIcon, 'cyan', [24, 24], [8, 8, 24, 24]);
+
+// Outline path — 1px stroke along the segments
+renderSvgPath(canvas, outlineIcon, 'cyan', [24, 24], [32, 8, 24, 24], { mode: 'stroke' });
+```
+
+Fill is the default. Reach for `{ mode: 'stroke' }` when the source path is `fill="none" stroke="..."` — the outline style Lucide, Feather, and Heroicons outline ship — since filling one of those paints the region the outline encloses rather than the outline itself. Stroke is 1 pixel wide; `stroke-width`, joins, caps, and dashes are not interpreted.
+
 ## Project Structure
 
 ```
@@ -138,7 +156,7 @@ src/
   image.ts        Image loading (sharp), sprite downsampling
   animation.ts    Multi-frame animation builder
   preview.ts      PNG + animated GIF encoder
-  svg-path.ts     SVG path parser + polygon rasterizer
+  svg-path.ts     SVG path parser + polygon rasterizer (fill and stroke)
   index.ts        Barrel export
 tests/            Vitest tests (one per src module)
 scripts/          Runnable display scripts

@@ -204,7 +204,7 @@ src/
   image.ts      Image loading (sharp, alpha-preserving), sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
   preview.ts    Zero-dep PNG encoder, savePng() with opt-in RGBA; animated GIF export via gifenc
-  svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer
+  svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer, 1px stroke mode for outline paths
   gifenc.d.ts   Local type declarations for gifenc (ships none)
   index.ts      Barrel export
 tests/          Vitest tests (one per src module)
