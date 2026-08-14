@@ -190,9 +190,10 @@ Device discovery (no auth): `POST https://app.divoom-gz.com/Device/ReturnSameLAN
 
 ```
 AGENTS.md      Agent instructions for Codex and other harnesses; mirrors this file
-.github/       Issue forms for bugs and feature requests
+.github/       Issue forms, contributing guide, security policy, code of conduct
+skills/        Agent Skills — git-wrapup, release-and-publish, report-issue-local
 assets/         Source images (PNGs) for sprites — drop files here
-scripts/        Reusable display scripts plus clean.ts for clean rebuilds
+scripts/        Reusable display scripts plus tooling (clean, check-docs-sync, list-skills)
 output/         Generated PNG previews — do not commit
 src/
   canvas.ts     Square RGBA pixel buffer (16/32/64) + drawing primitives; exports flatten to device RGB
@@ -201,8 +202,9 @@ src/
   font.ts       Bitmap fonts (FONT_5x7 full ASCII, FONT_3x5 with lowercase), drawText, measureText
   image.ts      Image loading (sharp, alpha-preserving), sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
-  preview.ts    Zero-dep PNG encoder, savePng()
+  preview.ts    Zero-dep PNG encoder, savePng(); animated GIF export via gifenc
   svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer
+  gifenc.d.ts   Local type declarations for gifenc (ships none)
   index.ts      Barrel export
 tests/          Vitest tests (one per src module)
 ```
@@ -244,7 +246,7 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 ## Tech Stack
 
 - **Runtime:** Bun / TypeScript (ESM)
-- **Dependencies:** `sharp` (image loading/resize)
+- **Dependencies:** `sharp` (image loading/resize), `gifenc` (animated GIF export)
 - **HTTP:** Native `fetch` for device API
 - **Rendering:** Pure TypeScript pixel math for canvas/drawing
 - **Encoding:** Base64 for `PicData` payloads
@@ -285,6 +287,16 @@ All scripts: `bun run build && bun dist/scripts/<name>.js`
 - Use `PicID` to track animation identity; increment for new animations
 - Keep frame count under 40 for stability
 - Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug
+
+## Skills
+
+Repo procedures live in `skills/`, one `SKILL.md` per workflow — read the relevant one before acting rather than re-deriving it. `bun run list-skills` prints the index with absolute paths (a sub-agent does not inherit the parent session's skill registry).
+
+| Skill | Use when |
+|---|---|
+| `git-wrapup` | Verified changes are ready to become a version — commits, CHANGELOG, annotated tag, local only |
+| `release-and-publish` | A tag exists locally and the release goes public — push, npm, GitHub Release |
+| `report-issue-local` | Filing a bug or feature request against this repo |
 
 ## Maintenance
 
