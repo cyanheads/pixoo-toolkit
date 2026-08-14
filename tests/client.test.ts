@@ -467,6 +467,40 @@ describe('PixooClient.push', () => {
     expect([decoded[0], decoded[1], decoded[2]]).toEqual([255, 128, 64]);
   });
 
+  it.each([
+    [32, 64],
+    [64, 16],
+  ] as const)(
+    'rejects a %i-pixel client being handed a %i-pixel canvas before making a request',
+    async (clientSize, canvasSize) => {
+      const fetchMock = mockFetch({ error_code: 0 });
+      globalThis.fetch = fetchMock;
+      const client = new PixooClient(TEST_IP, { size: clientSize, retries: 0 });
+
+      const promise = client.push(new Canvas(canvasSize));
+      await expect(promise).rejects.toThrow(RangeError);
+      await expect(promise).rejects.toThrow(
+        `Canvas is ${canvasSize}x${canvasSize}; client is configured for a ${clientSize}x${clientSize} display`,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([16, 32, 64] as const)('sends a matching %i-pixel canvas', async (size) => {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+      bodies.push(JSON.parse(opts.body));
+      return Promise.resolve(mockResponse({ error_code: 0 }));
+    });
+
+    const client = new PixooClient(TEST_IP, { size, retries: 0 });
+    const res = await client.push(new Canvas(size));
+
+    expect(res.ok).toBe(true);
+    expect(bodies[1]!['PicWidth']).toBe(size);
+    expect(Buffer.from(bodies[1]!['PicData'] as string, 'base64')).toHaveLength(size * size * 3);
+  });
+
   it('returns the reset failure without sending the frame', async () => {
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
@@ -534,6 +568,25 @@ describe('PixooClient.pushAnimation', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [32, 64],
+    [64, 16],
+  ] as const)(
+    'rejects a %i-pixel client being handed %i-pixel frames before making a request',
+    async (clientSize, frameSize) => {
+      const fetchMock = mockFetch({ error_code: 0 });
+      globalThis.fetch = fetchMock;
+      const client = new PixooClient(TEST_IP, { size: clientSize, retries: 0 });
+
+      const promise = client.pushAnimation([new Canvas(frameSize), new Canvas(frameSize)]);
+      await expect(promise).rejects.toThrow(RangeError);
+      await expect(promise).rejects.toThrow(
+        `Animation frame 0 is ${frameSize}x${frameSize}; client is configured for a ${clientSize}x${clientSize} display`,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([16, 32, 64] as const)(
     'keeps %i frame dimensions in every device request',
     async (size) => {
@@ -543,7 +596,7 @@ describe('PixooClient.pushAnimation', () => {
         return Promise.resolve(mockResponse({ error_code: 0 }));
       });
 
-      const client = new PixooClient(TEST_IP, { retries: 0 });
+      const client = new PixooClient(TEST_IP, { size, retries: 0 });
       await client.pushAnimation([new Canvas(size), new Canvas(size)]);
 
       expect(bodies).toHaveLength(3);
@@ -608,6 +661,114 @@ describe('PixooClient.pushAnimation', () => {
     if (!res.ok) expect(res.kind).toBe('device');
     // Should have called: reset, frame0 (ok), frame1 (fail), reset (cleanup) = 4 calls
     expect(callCount).toBe(4);
+  });
+});
+
+describe('PixooClient frame throttling', () => {
+  const INTERVAL = 40;
+  let originalFetch: typeof globalThis.fetch;
+  let sends: Array<{ command: string; at: number }>;
+
+  /** Timestamps of the Draw/SendHttpGif requests, in send order. */
+  function frameTimes(): number[] {
+    return sends.filter((s) => s.command === 'Draw/SendHttpGif').map((s) => s.at);
+  }
+
+  /** Elapsed ms between consecutive frame sends. */
+  function frameGaps(): number[] {
+    const times = frameTimes();
+    return times.slice(1).map((at, i) => at - times[i]!);
+  }
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    sends = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
+      sends.push({ command: JSON.parse(opts.body).Command as string, at: Date.now() });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
+    });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  /** Timing stays as it was before the option existed unless it is asked for. */
+  it.each([
+    ['omitted', {}],
+    ['zero', { minPushInterval: 0 }],
+  ])('sends frames back to back when minPushInterval is %s', async (_label, opts) => {
+    const client = new PixooClient(TEST_IP, { retries: 0, ...opts });
+
+    const started = Date.now();
+    await client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]);
+    const elapsed = Date.now() - started;
+
+    expect(frameTimes()).toHaveLength(3);
+    expect(Math.max(...frameGaps())).toBeLessThan(INTERVAL / 2);
+    expect(elapsed).toBeLessThan(INTERVAL / 2);
+  });
+
+  it('spaces animation frames by minPushInterval', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]);
+
+    expect(frameTimes()).toHaveLength(3);
+    for (const gap of frameGaps()) expect(gap).toBeGreaterThanOrEqual(INTERVAL - 5);
+  });
+
+  it('does not delay the first frame behind its own reset', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    const started = Date.now();
+    await client.push(new Canvas());
+    const elapsed = Date.now() - started;
+
+    expect(sends.map((s) => s.command)).toEqual(['Draw/ResetHttpGifId', 'Draw/SendHttpGif']);
+    expect(elapsed).toBeLessThan(INTERVAL / 2);
+  });
+
+  it('spaces consecutive pushes without delaying the intervening reset', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.push(new Canvas());
+    await client.push(new Canvas());
+
+    expect(sends.map((s) => s.command)).toEqual([
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+    ]);
+    expect(sends[2]!.at - sends[1]!.at).toBeLessThan(INTERVAL / 2);
+    expect(frameGaps()[0]).toBeGreaterThanOrEqual(INTERVAL - 5);
+  });
+
+  it('spaces the next animation from the previous frame across the reset', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.pushAnimation([new Canvas(), new Canvas()]);
+    await client.push(new Canvas());
+
+    expect(frameTimes()).toHaveLength(3);
+    for (const gap of frameGaps()) expect(gap).toBeGreaterThanOrEqual(INTERVAL - 5);
+  });
+
+  it('does not delay non-draw commands behind a frame', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.push(new Canvas());
+    const started = Date.now();
+    await client.getConfig();
+    await client.setBrightness(50);
+    const elapsed = Date.now() - started;
+
+    expect(sends.map((s) => s.command).slice(2)).toEqual([
+      'Channel/GetAllConf',
+      'Channel/SetBrightness',
+    ]);
+    expect(elapsed).toBeLessThan(INTERVAL / 2);
   });
 });
 

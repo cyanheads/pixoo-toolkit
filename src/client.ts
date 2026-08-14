@@ -77,7 +77,7 @@ export enum Channel {
 }
 
 export interface PixooClientOptions {
-  /** Display size in pixels (default: 64). Determines PicWidth for draw commands and default text width. */
+  /** Size in pixels of the display this client talks to (default: 64). Pushed canvases must match it; also the default text width. */
   size?: PixooSize;
   /** Request timeout in ms (default: 5000). */
   timeout?: number;
@@ -85,6 +85,16 @@ export interface PixooClientOptions {
   retries?: number;
   /** Base delay in ms before first retry, doubled on each subsequent attempt (default: 250). */
   retryDelay?: number;
+  /**
+   * Minimum ms between consecutive frame sends (default: 0 — no throttling).
+   * Spaces the Draw/SendHttpGif requests of `push()` and `pushAnimation()`,
+   * measured from when the previous frame send started, so the interval caps
+   * the frame rate regardless of how long each request takes. The
+   * Draw/ResetHttpGifId that precedes a push is not throttled — it is a
+   * control command, and delaying it works against the ~300-push freeze the
+   * interval exists to avoid.
+   */
+  minPushInterval?: number;
 }
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
@@ -101,6 +111,8 @@ export class PixooClient {
   private readonly timeout: number;
   private readonly retries: number;
   private readonly retryDelay: number;
+  private readonly minPushInterval: number;
+  private lastFrameSentAt = 0;
   private picId = Date.now() % 10000;
 
   constructor(
@@ -112,6 +124,7 @@ export class PixooClient {
     this.timeout = opts.timeout ?? 5000;
     this.retries = opts.retries ?? 1;
     this.retryDelay = opts.retryDelay ?? 250;
+    this.minPushInterval = opts.minPushInterval ?? 0;
   }
 
   /**
@@ -211,18 +224,52 @@ export class PixooClient {
 
   // --- Display ---
 
+  /**
+   * Reject a canvas the configured display cannot render. Both sides are fixed
+   * at construction, so a mismatch is a coding error rather than a device or
+   * network failure — it throws instead of returning a PixooResult.
+   */
+  private assertMatchesDisplay(canvas: Canvas, subject: string): void {
+    if (canvas.width !== this.size || canvas.height !== this.size) {
+      throw new RangeError(
+        `${subject} is ${canvas.width}x${canvas.height}; client is configured for a ${this.size}x${this.size} display`,
+      );
+    }
+  }
+
+  /**
+   * Send one frame, held back until `minPushInterval` has passed since the
+   * previous frame send started. The timestamp is taken at the start of the
+   * send, so request latency counts toward the interval rather than adding
+   * to it.
+   */
+  private async sendFrame(params: Record<string, unknown>): Promise<PixooResult> {
+    if (this.minPushInterval > 0) {
+      const wait = this.lastFrameSentAt + this.minPushInterval - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      this.lastFrameSentAt = Date.now();
+    }
+    return this.send('Draw/SendHttpGif', params);
+  }
+
   /** Reset the device's internal GIF ID counter. Call before pushing if stale. */
   async resetGifId(): Promise<PixooResult> {
     return this.send('Draw/ResetHttpGifId');
   }
 
-  /** Push a single canvas frame to the display. */
+  /**
+   * Push a single canvas frame to the display.
+   * @param canvas - Canvas matching the client's configured size.
+   * @param speed - Milliseconds per frame.
+   * @throws RangeError if the canvas does not match the client's configured size.
+   */
   async push(canvas: Canvas, speed = 100): Promise<PixooResult> {
+    this.assertMatchesDisplay(canvas, 'Canvas');
     // A failed reset means the device will silently ignore the frame — surface it
     const reset = await this.resetGifId();
     if (!reset.ok) return reset;
     this.picId = (this.picId + 1) % 10000;
-    return this.send('Draw/SendHttpGif', {
+    return this.sendFrame({
       PicNum: 1,
       PicWidth: canvas.width,
       PicOffset: 0,
@@ -234,20 +281,24 @@ export class PixooClient {
 
   /**
    * Push a multi-frame animation to the display.
-   * @param frames - Non-empty array of equal-size Canvas instances (one per frame).
+   * @param frames - Non-empty array of equal-size Canvas instances (one per frame),
+   *   each matching the client's configured size.
    * @param speed - Milliseconds per frame.
+   * @throws RangeError if the array is empty, the frames disagree with each
+   *   other, or they do not match the client's configured size.
    */
   async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResult> {
     if (frames.length === 0) {
       throw new RangeError('pushAnimation requires at least one frame');
     }
     assertAnimationFrameDimensions(frames);
+    this.assertMatchesDisplay(frames[0]!, 'Animation frame 0');
     const reset = await this.resetGifId();
     if (!reset.ok) return reset;
     this.picId = (this.picId + 1) % 10000;
     let last: PixooResult = reset; // overwritten on the first iteration — frames is non-empty
     for (let i = 0; i < frames.length; i++) {
-      last = await this.send('Draw/SendHttpGif', {
+      last = await this.sendFrame({
         PicNum: frames.length,
         PicWidth: frames[0]!.width,
         PicOffset: i,
