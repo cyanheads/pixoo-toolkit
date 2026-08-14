@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.9] — 2026-08-13
+
+### Fixed
+
+- **canvas:** `fillTriangle()` no longer leaves a one-pixel gap at a fractional middle-vertex y — the upper scanline half now ends at `Math.ceil(by) - 1` (#25).
+- **canvas:** `fillRect()`, `fillCircle()`, `drawRect()`, `drawLineH()`, `drawLineV()`, and `gradientRadial()` now throw `RangeError` on non-finite coordinates, dimensions, or radii instead of silently no-opping; `drawCircle()` also validates the center, not just the radius (#26).
+- **canvas:** `scroll()` throws `RangeError` on a non-finite offset instead of erasing the canvas (#27).
+- **canvas:** `gradientRadial()` resolves its center pixel to the inner color at `radius = 0` instead of interpolating with a `0 / 0` factor (#28).
+- **color:** `lerpColor()` and `dimColor()` treat a `NaN` factor as `0` instead of propagating `NaN` channels; `dimColor()` also saturates every channel — including a zero one — for an infinite factor instead of returning `NaN` on `0 * Infinity` (#28).
+
 ## [0.7.8] — 2026-08-13
 
 ### Added
