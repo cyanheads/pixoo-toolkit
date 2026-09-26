@@ -18,6 +18,20 @@ const RGB_BUFFER_SIZES = new Map<number, PixooSize>([
   [64 * 64 * 3, 64],
 ]);
 
+/** Largest width or height a canvas accepts — a 4096×4096 buffer is 64 MiB. */
+const MAX_DIMENSION = 4096;
+
+/** Bytes passed to one `String.fromCharCode` call, well under engine argument limits. */
+const BINARY_STRING_CHUNK = 0x8000;
+
+function assertDimension(name: 'width' | 'height', value: number): void {
+  if (!Number.isInteger(value) || value < 1 || value > MAX_DIMENSION) {
+    throw new RangeError(
+      `Canvas ${name} must be an integer from 1 to ${MAX_DIMENSION}; got ${value}`,
+    );
+  }
+}
+
 /**
  * Reject non-finite geometry before it reaches bounds arithmetic, where NaN
  * would collapse a shape into a silent no-op or a partial figure.
@@ -29,7 +43,9 @@ function assertFinite(values: readonly number[], message: string): void {
 }
 
 /**
- * Square RGBA pixel buffer with drawing primitives.
+ * RGBA pixel buffer with drawing primitives, any width and height from 1 to
+ * 4096. `PixooClient` only pushes canvases the size of its panel; other sizes
+ * serve as off-screen layers, strips, and supersampled renders.
  *
  * The working buffer stores straight (non-premultiplied) RGBA — width ×
  * height × 4 bytes. A fresh canvas is fully transparent; drawing primitives
@@ -37,7 +53,7 @@ function assertFinite(values: readonly number[], message: string): void {
  * flatten alpha over black at the edge (`toRgbBuffer`, `toBase64`), so a
  * partially transparent pixel dims toward the unlit LED.
  *
- * Coordinates: (0,0) = top-left, (size-1, size-1) = bottom-right.
+ * Coordinates: (0,0) = top-left, (width-1, height-1) = bottom-right.
  * All drawing methods mutate in-place and return `this` for chaining.
  */
 export class Canvas {
@@ -47,11 +63,20 @@ export class Canvas {
   readonly height: number;
 
   /**
-   * @param sizeOrSource - A display size (16/32/64, default 64), an RGBA
-   *   buffer (width × height × 4), or an RGB buffer (width × height × 3,
-   *   upconverted to fully opaque RGBA).
+   * A transparent canvas: `new Canvas()` is 64×64 (the Pixoo-64 panel),
+   * `new Canvas(size)` is `size × size`, and `new Canvas(width, height)` is
+   * `width × height`.
+   * @throws {RangeError} When a dimension is not an integer from 1 to 4096.
    */
-  constructor(sizeOrSource?: PixooSize | Uint8Array) {
+  constructor(width?: number, height?: number);
+  /**
+   * A copy of a panel-size buffer, its size inferred from the length: RGBA
+   * (16/32/64 × same × 4) or RGB (× 3, upconverted to fully opaque RGBA).
+   * Use `Canvas.fromRgba` for any other dimensions.
+   * @throws {RangeError} When the length matches no panel size.
+   */
+  constructor(source: Uint8Array);
+  constructor(sizeOrSource?: number | Uint8Array, height?: number) {
     if (sizeOrSource instanceof Uint8Array) {
       const rgbaSize = RGBA_BUFFER_SIZES.get(sizeOrSource.length);
       const rgbSize = RGB_BUFFER_SIZES.get(sizeOrSource.length);
@@ -71,19 +96,41 @@ export class Canvas {
         }
       } else {
         const valid = [...RGBA_BUFFER_SIZES.keys(), ...RGB_BUFFER_SIZES.keys()].join(', ');
-        throw new Error(`Invalid buffer length ${sizeOrSource.length}; expected one of: ${valid}`);
+        throw new RangeError(
+          `Invalid buffer length ${sizeOrSource.length}; expected one of: ${valid} — use Canvas.fromRgba(buffer, width, height) for other dimensions`,
+        );
       }
     } else {
-      const size = sizeOrSource ?? DEFAULT_SIZE;
-      this.width = size;
-      this.height = size;
-      this.buffer = new Uint8Array(size * size * 4);
+      const w = sizeOrSource ?? DEFAULT_SIZE;
+      const h = height ?? w;
+      assertDimension('width', w);
+      assertDimension('height', h);
+      this.width = w;
+      this.height = h;
+      this.buffer = new Uint8Array(w * h * 4);
     }
   }
 
-  /** Clone this canvas into a new instance. */
+  /**
+   * Create a canvas of any valid dimensions from straight-alpha RGBA bytes.
+   * The bytes are copied.
+   * @throws {RangeError} When either dimension is not an integer from 1 to
+   *   4096, or `rgba.length` is not `width × height × 4`.
+   */
+  static fromRgba(rgba: Uint8Array, width: number, height: number): Canvas {
+    const canvas = new Canvas(width, height);
+    if (rgba.length !== canvas.buffer.length) {
+      throw new RangeError(
+        `Canvas.fromRgba expected ${canvas.buffer.length} bytes (${width}×${height}×4); got ${rgba.length}`,
+      );
+    }
+    canvas.buffer.set(rgba);
+    return canvas;
+  }
+
+  /** Clone this canvas — dimensions and alpha included — into a new instance. */
   clone(): Canvas {
-    return new Canvas(this.buffer);
+    return Canvas.fromRgba(this.buffer, this.width, this.height);
   }
 
   // --- Pixel access ---
@@ -679,8 +726,17 @@ export class Canvas {
     return out;
   }
 
-  /** Base64-encode the flattened RGB pixel data (for Draw/SendHttpGif). */
+  /**
+   * Base64-encode the flattened RGB pixel data (for Draw/SendHttpGif). Encodes
+   * with the web-standard `btoa`, so it runs in a browser as well as in Node
+   * and Bun.
+   */
   toBase64(): string {
-    return Buffer.from(this.toRgbBuffer()).toString('base64');
+    const rgb = this.toRgbBuffer();
+    let binary = '';
+    for (let i = 0; i < rgb.length; i += BINARY_STRING_CHUNK) {
+      binary += String.fromCharCode(...rgb.subarray(i, i + BINARY_STRING_CHUNK));
+    }
+    return btoa(binary);
   }
 }

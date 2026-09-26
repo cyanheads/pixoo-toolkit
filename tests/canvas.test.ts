@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Canvas, DEFAULT_SIZE } from '../src/canvas.js';
+import { drawText, FONT_3x5 } from '../src/font.js';
+import { fillSubpaths, renderSvgPath, strokeSubpaths } from '../src/svg-path.js';
 
 /** Count pixels carrying a non-zero stored alpha. */
 function paintedCount(c: Canvas): number {
@@ -97,6 +99,258 @@ describe('Canvas construction', () => {
   });
 });
 
+describe('Canvas of any width and height', () => {
+  it.each([
+    [320, 7],
+    [7, 320],
+    [1, 1],
+    [4096, 1],
+    [1, 4096],
+    [100, 40],
+  ])('creates a transparent %i×%i canvas', (width, height) => {
+    const c = new Canvas(width, height);
+    expect(c.width).toBe(width);
+    expect(c.height).toBe(height);
+    expect(c.buffer.length).toBe(width * height * 4);
+    expect(paintedCount(c)).toBe(0);
+  });
+
+  it.each([1, 20, 100, 512, 4096])('creates a square from the single number %i', (size) => {
+    const c = new Canvas(size);
+    expect(c.width).toBe(size);
+    expect(c.height).toBe(size);
+    expect(c.buffer.length).toBe(size * size * 4);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, 4097, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'rejects %s as a size',
+    (size) => {
+      expect(() => new Canvas(size)).toThrow(RangeError);
+    },
+  );
+
+  it.each([0, -1, 1.5, Number.NaN, 4097])('rejects %s as either dimension', (bad) => {
+    expect(() => new Canvas(bad, 7)).toThrow(RangeError);
+    expect(() => new Canvas(320, bad)).toThrow(RangeError);
+  });
+
+  it('names the bad dimension and the valid range', () => {
+    expect(() => new Canvas(320, 0)).toThrow(
+      new RangeError('Canvas height must be an integer from 1 to 4096; got 0'),
+    );
+    expect(() => new Canvas(4097)).toThrow(
+      new RangeError('Canvas width must be an integer from 1 to 4096; got 4097'),
+    );
+  });
+
+  it('points the buffer-length error at Canvas.fromRgba', () => {
+    expect(() => new Canvas(new Uint8Array(320 * 7 * 4))).toThrow(
+      'Invalid buffer length 8960; expected one of: 1024, 4096, 16384, 768, 3072, 12288 — use Canvas.fromRgba(buffer, width, height) for other dimensions',
+    );
+  });
+
+  it.each([0, 100, 320 * 7 * 4, 64 * 64 * 4 + 1])(
+    'throws RangeError for a %i-byte buffer, like every other dimension error',
+    (length) => {
+      const construct = () => new Canvas(new Uint8Array(length));
+      expect(construct).toThrow(RangeError);
+      expect(construct).toThrow(`Invalid buffer length ${length}; expected one of:`);
+    },
+  );
+});
+
+describe('drawing on non-square canvases', () => {
+  const STAR = 'M8 1 L10 6 L15 6 L11 9 L13 15 L8 11 L3 15 L5 9 L1 6 L6 6 Z';
+  const sprite = () => new Canvas(16).fillCircle(8, 8, 6, 'cyan').setPixel(0, 0, 'red', 90);
+
+  /** Each op draws near the origin and far past it, so clipping is exercised on both axes. */
+  const OPS: [string, (c: Canvas) => unknown][] = [
+    [
+      'setPixel',
+      (c) => c.setPixel(5, 3, 'red').setPixel(300, 0, 'blue', 100).setPixel(0, 300, 'lime'),
+    ],
+    ['blendPixel', (c) => c.clear([9, 9, 9]).blendPixel(4, 0, 'white', 0.4)],
+    ['clear', (c) => c.clear([1, 2, 3])],
+    ['fillRect', (c) => c.fillRect(-3, 0, 400, 3, 'red').fillRect(0, -3, 3, 400, 'blue')],
+    ['fillCircle', (c) => c.fillCircle(3, 3, 6, 'green')],
+    ['drawCircle', (c) => c.drawCircle(3, 3, 4, 'green').drawCircle(30, 2, 9, 'yellow')],
+    [
+      'drawLine',
+      (c) =>
+        c
+          .drawLine(-50, -3, 400, 12, 'yellow')
+          .drawLine(0, 0, Number.MAX_VALUE, 0, 'red')
+          .drawLine(0, 0, 0, Number.MAX_VALUE, 'blue'),
+    ],
+    ['drawLineH', (c) => c.drawLineH(-2, 0, 500, 'red')],
+    ['drawLineV', (c) => c.drawLineV(0, -2, 500, 'blue')],
+    ['drawRect', (c) => c.drawRect(0, 0, 300, 300, 'white')],
+    ['drawTriangle', (c) => c.drawTriangle(0, 0, 300, 5, 5, 300, 'red')],
+    ['fillTriangle', (c) => c.fillTriangle(0, 0, 300, 5, 5, 300, 'red')],
+    ['gradientRadial', (c) => c.gradientRadial(4, 3, 30, 'white', 'black')],
+    ['blit', (c) => c.blit(sprite(), -4, -5).blit(sprite(), 290, 0).blit(sprite(), 0, 290)],
+    ['scroll', (c) => c.fillRect(0, 0, 20, 20, 'red').setPixel(1, 0, 'blue').scroll(2, 1)],
+    ['drawText', (c) => drawText(c, 'Hello, strip!', 0, 0, 'white', { font: FONT_3x5 })],
+    ['renderSvgPath fill', (c) => renderSvgPath(c, STAR, 'orange', [16, 16], [-3, -4, 16, 16])],
+    [
+      'renderSvgPath stroke',
+      (c) => renderSvgPath(c, STAR, 'orange', [16, 16], [-4, -4, 16, 16], { mode: 'stroke' }),
+    ],
+    [
+      'fillSubpaths',
+      (c) =>
+        fillSubpaths(
+          c,
+          [
+            [
+              { x: 0, y: 0 },
+              { x: 300, y: 3 },
+              { x: 5, y: 300 },
+            ],
+          ],
+          'red',
+        ),
+    ],
+    [
+      'strokeSubpaths',
+      (c) =>
+        strokeSubpaths(
+          c,
+          [
+            [
+              { x: 0, y: 0 },
+              { x: 300, y: 0 },
+            ],
+            [
+              { x: 0, y: 0 },
+              { x: 0, y: 300 },
+            ],
+          ],
+          'blue',
+        ),
+    ],
+  ];
+
+  const casesFor = (shapes: [number, number][]) =>
+    shapes.flatMap(([w, h]) => OPS.map(([name, op]) => [name, w, h, op] as const));
+
+  it.each(
+    casesFor([
+      [320, 7],
+      [7, 320],
+      [320, 1],
+      [1, 320],
+    ]),
+  )(
+    '%s paints a %i×%i canvas like the matching region of a 320×320 one',
+    (_name, width, height, op) => {
+      const small = new Canvas(width, height);
+      const big = new Canvas(320);
+      op(small);
+      op(big);
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          expect(small.getPixelRgba(x, y)).toEqual(big.getPixelRgba(x, y));
+        }
+      }
+    },
+  );
+
+  it.each(
+    casesFor([
+      [320, 7],
+      [7, 320],
+    ]),
+  )('%s paints something on a %i×%i canvas', (_name, width, height, op) => {
+    const c = new Canvas(width, height);
+    op(c);
+    expect(paintedCount(c)).toBeGreaterThan(0);
+  });
+
+  it('runs gradientV from the first row to the last on a strip', () => {
+    const c = new Canvas(320, 7).gradientV([255, 0, 0], [0, 0, 255]);
+    for (const x of [0, 160, 319]) {
+      expect(c.getPixel(x, 0)).toEqual([255, 0, 0]);
+      expect(c.getPixel(x, 3)).toEqual([128, 0, 128]);
+      expect(c.getPixel(x, 6)).toEqual([0, 0, 255]);
+    }
+    const tall = new Canvas(7, 320).gradientV([255, 0, 0], [0, 0, 255]);
+    expect(tall.getPixel(6, 0)).toEqual([255, 0, 0]);
+    expect(tall.getPixel(6, 319)).toEqual([0, 0, 255]);
+  });
+
+  it('runs gradientH from the first column to the last on a strip', () => {
+    const c = new Canvas(7, 320).gradientH([255, 0, 0], [0, 0, 255]);
+    for (const y of [0, 160, 319]) {
+      expect(c.getPixel(0, y)).toEqual([255, 0, 0]);
+      expect(c.getPixel(3, y)).toEqual([128, 0, 128]);
+      expect(c.getPixel(6, y)).toEqual([0, 0, 255]);
+    }
+    const wide = new Canvas(320, 7).gradientH([255, 0, 0], [0, 0, 255]);
+    expect(wide.getPixel(0, 6)).toEqual([255, 0, 0]);
+    expect(wide.getPixel(319, 6)).toEqual([0, 0, 255]);
+  });
+
+  it.each([
+    ['gradientV', 320, 1],
+    ['gradientH', 1, 40],
+    ['gradientV', 1, 1],
+    ['gradientH', 1, 1],
+  ] as const)('%s on a %i×%i canvas paints the start color', (method, width, height) => {
+    const c = new Canvas(width, height)[method]([255, 0, 0], [0, 0, 255]);
+    expect(paintedCount(c)).toBe(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) expect(c.getPixelRgba(x, y)).toEqual([255, 0, 0, 255]);
+    }
+  });
+});
+
+describe('Canvas.fromRgba', () => {
+  it('wraps RGBA bytes of any dimensions', () => {
+    const bytes = new Uint8Array(128 * 32 * 4);
+    bytes.set([1, 2, 3, 4], (5 * 128 + 100) * 4);
+    const c = Canvas.fromRgba(bytes, 128, 32);
+
+    expect([c.width, c.height]).toEqual([128, 32]);
+    expect(c.getPixelRgba(100, 5)).toEqual([1, 2, 3, 4]);
+    expect(c.buffer).toEqual(bytes);
+  });
+
+  it('copies its input', () => {
+    const bytes = new Uint8Array(3 * 2 * 4);
+    const c = Canvas.fromRgba(bytes, 3, 2);
+    bytes[0] = 99;
+    expect(c.buffer[0]).toBe(0);
+    c.buffer[1] = 77;
+    expect(bytes[1]).toBe(0);
+  });
+
+  it('accepts panel sizes too', () => {
+    const bytes = new Uint8Array(16 * 16 * 4).fill(200);
+    const c = Canvas.fromRgba(bytes, 16, 16);
+    expect(c.getPixelRgba(15, 15)).toEqual([200, 200, 200, 200]);
+  });
+
+  it.each([
+    [3 * 2 * 4 - 1, 3, 2],
+    [3 * 2 * 4 + 1, 3, 2],
+    [3 * 2 * 3, 3, 2],
+    [0, 1, 1],
+  ])('rejects %i bytes for %i×%i', (length, width, height) => {
+    expect(() => Canvas.fromRgba(new Uint8Array(length), width, height)).toThrow(
+      new RangeError(
+        `Canvas.fromRgba expected ${width * height * 4} bytes (${width}×${height}×4); got ${length}`,
+      ),
+    );
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, 4097])('rejects %s as either dimension', (bad) => {
+    expect(() => Canvas.fromRgba(new Uint8Array(0), bad, 1)).toThrow(RangeError);
+    expect(() => Canvas.fromRgba(new Uint8Array(0), 1, bad)).toThrow(RangeError);
+  });
+});
+
 describe('Canvas.clone', () => {
   it('creates an independent copy', () => {
     const c = new Canvas();
@@ -105,6 +359,25 @@ describe('Canvas.clone', () => {
     expect(clone.getPixel(5, 5)).toEqual([255, 0, 0]);
     clone.setPixel(5, 5, [0, 255, 0]);
     expect(c.getPixel(5, 5)).toEqual([255, 0, 0]);
+  });
+
+  it.each([
+    [320, 7],
+    [7, 320],
+    [1, 1],
+    [20, 20],
+  ])('keeps a %i×%i canvas’s dimensions and alpha', (width, height) => {
+    const c = new Canvas(width, height);
+    c.setPixel(0, 0, [1, 2, 3]);
+    c.setPixel(width - 1, height - 1, [9, 8, 7], 77);
+
+    const clone = c.clone();
+
+    expect([clone.width, clone.height]).toEqual([width, height]);
+    expect(clone.buffer).toEqual(c.buffer);
+    expect(clone.getPixelRgba(width - 1, height - 1)).toEqual([9, 8, 7, 77]);
+    clone.setPixel(width - 1, height - 1, [255, 255, 255]);
+    expect(c.getPixelRgba(width - 1, height - 1)).toEqual([9, 8, 7, 77]);
   });
 });
 
@@ -307,11 +580,11 @@ describe('drawLine', () => {
     expect(c.buffer).toEqual(before);
   });
 
-  it.each([
+  it.each<[name: string, endpoints: [number, number, number, number]]>([
     ['horizontal', [Number.MAX_VALUE, 0, 0, 0]],
     ['vertical', [0, Number.MAX_VALUE, 0, 0]],
     ['diagonal', [Number.MAX_VALUE, Number.MAX_VALUE, 0, 0]],
-  ] as const)('clips an intersecting extreme finite %s segment', (_name, endpoints) => {
+  ])('clips an intersecting extreme finite %s segment', (_name, endpoints) => {
     const c = new Canvas(16);
 
     expect(c.drawLine(...endpoints, [255, 0, 0])).toBe(c);
@@ -394,7 +667,7 @@ describe('drawLine', () => {
     expect(c.getPixel(3, 0)).toEqual([0, 0, 0]);
   });
 
-  it.each([
+  it.each<[endpoints: [number, number, number, number], expectedPixels: [number, number][]]>([
     [
       [-2, 0, 2, 1],
       [
@@ -411,7 +684,7 @@ describe('drawLine', () => {
         [2, 1],
       ],
     ],
-  ] as const)('preserves the clipped Bresenham raster for %j', (endpoints, expectedPixels) => {
+  ])('preserves the clipped Bresenham raster for %j', (endpoints, expectedPixels) => {
     const c = new Canvas(16);
 
     c.drawLine(...endpoints, [255, 0, 0]);
@@ -890,7 +1163,73 @@ describe('scroll', () => {
   });
 });
 
+/** Deterministic xorshift32 noise — every byte value, alpha included, in scrambled order. */
+function noiseRgba(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(width * height * 4);
+  let s = 0x2545f491;
+  for (let i = 0; i < bytes.length; i++) {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    bytes[i] = s & 0xff;
+  }
+  return bytes;
+}
+
+/** The Node reference encoding `toBase64` has always produced. */
+const nodeBase64 = (c: Canvas): string => Buffer.from(c.toRgbBuffer()).toString('base64');
+
 describe('toBase64', () => {
+  it.each([
+    [16, 16],
+    [32, 32],
+    [64, 64],
+    [1, 1],
+    [5, 3],
+    [320, 7],
+    [7, 320],
+  ])('matches the Node base64 of the flattened RGB for a noisy %i×%i canvas', (width, height) => {
+    const c = Canvas.fromRgba(noiseRgba(width, height), width, height);
+    expect(c.toBase64()).toBe(nodeBase64(c));
+  });
+
+  it('exercises all 64 base64 symbols on a noisy panel', () => {
+    const encoded = Canvas.fromRgba(noiseRgba(64, 64), 64, 64).toBase64();
+    expect(new Set(encoded).size).toBe(64);
+  });
+
+  describe('with no Buffer global, as in a browser', () => {
+    /** Run `fn` with `globalThis.Buffer` stubbed to undefined. */
+    function withoutBuffer<T>(fn: () => T): T {
+      vi.stubGlobal('Buffer', undefined);
+      try {
+        expect(globalThis.Buffer).toBeUndefined();
+        return fn();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+
+    it.each([16, 32, 64])('encodes a blank size-%i canvas byte-identically', (size) => {
+      const c = new Canvas(size);
+      const expected = nodeBase64(c);
+      expect(withoutBuffer(() => c.toBase64())).toBe(expected);
+    });
+
+    it.each([
+      [16, 16],
+      [32, 32],
+      [64, 64],
+      [1, 1],
+      [320, 7],
+      [4096, 64],
+    ])('encodes a noisy %i×%i canvas byte-identically', (width, height) => {
+      const c = Canvas.fromRgba(noiseRgba(width, height), width, height);
+      const expected = nodeBase64(c);
+      expect(withoutBuffer(() => c.toBase64())).toBe(expected);
+    });
+  });
+
   it('returns a valid base64 string of correct length', () => {
     const c = new Canvas();
     const b64 = c.toBase64();

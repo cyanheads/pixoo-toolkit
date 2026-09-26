@@ -78,6 +78,19 @@ function assertScale(method: string, scale: number): void {
   }
 }
 
+/** Longest side, in pixels, a default-scaled preview stays within. */
+const PREVIEW_MAX_SIDE = 4096;
+
+/**
+ * Default preview scale: the largest integer from 1 to 8 that keeps the
+ * scaled output within 4096 px per side — 8 for every canvas up to 512 px, 1
+ * from 2049 px up. An unbounded 8 would allocate ~3.2 GB for a 4096×4096 canvas.
+ */
+function defaultScale(canvas: Canvas): number {
+  const longest = Math.max(canvas.width, canvas.height);
+  return Math.max(1, Math.min(8, Math.floor(PREVIEW_MAX_SIDE / longest)));
+}
+
 function encodePng(
   width: number,
   height: number,
@@ -170,13 +183,15 @@ export function canvasToPng(canvas: Canvas, scale = 1, options?: PngOptions): Ui
 
 /**
  * Save a Canvas as a PNG file.
- * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 8 → 512×512).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default:
+ *   the largest from 1 to 8 that keeps the output within 4096 px per side — 8
+ *   for any canvas up to 512 px, so a 64×64 panel saves at 512×512).
  * @throws {RangeError} When the scale is not a positive integer — nothing is written.
  */
 export async function savePng(
   canvas: Canvas,
   path: string,
-  scale = 8,
+  scale = defaultScale(canvas),
   options?: PngOptions,
 ): Promise<void> {
   assertScale('savePng', scale);
@@ -187,12 +202,13 @@ export async function savePng(
 /**
  * Save animation frames as individual PNGs.
  * Files named `{basePath}_000.png`, `{basePath}_001.png`, etc.
- * @param scale - Forwarded to `savePng`, which validates it.
+ * @param scale - Forwarded to `savePng`, which validates it (default: `savePng`'s
+ *   rule — the largest from 1 to 8 that keeps each frame within 4096 px per side).
  */
 export async function saveAnimationPngs(
   frames: Canvas[],
   basePath: string,
-  scale = 8,
+  scale?: number,
 ): Promise<string[]> {
   const paths = frames.map((_, i) => `${basePath}_${String(i).padStart(3, '0')}.png`);
   await Promise.all(frames.map((frame, i) => savePng(frame, paths[i]!, scale)));
@@ -214,26 +230,38 @@ function rgbToRgba(rgb: Uint8Array): Uint8Array {
   return rgba;
 }
 
+/** GIF stores its logical screen and frame dimensions as unsigned 16-bit fields. */
+const GIF_MAX_DIMENSION = 0xffff;
+
 /**
  * Encode animation frames as an animated GIF buffer.
  * @param speed - Delay between frames in milliseconds.
- * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 8 → 512×512).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default:
+ *   the largest from 1 to 8 that keeps the output within 4096 px per side — 8
+ *   for any frame up to 512 px, so 64×64 frames encode at 512×512).
  * @param maxColors - Max palette colors per frame (default: 256).
- * @throws {RangeError} When the scale is not a positive integer.
+ * @throws {RangeError} When the scale is not a positive integer, or the scaled
+ *   frame exceeds 65535 pixels on either side.
  */
 export function encodeAnimationGif(
   frames: Canvas[],
   speed: number,
-  scale = 8,
+  scale?: number,
   maxColors = 256,
 ): Uint8Array {
-  assertScale('encodeAnimationGif', scale);
+  if (scale !== undefined) assertScale('encodeAnimationGif', scale);
   const first = frames[0];
   if (!first) throw new Error('encodeAnimationGif requires at least one frame');
   assertAnimationFrameDimensions(frames);
 
+  scale ??= defaultScale(first);
   const w = first.width * scale;
   const h = first.height * scale;
+  if (w > GIF_MAX_DIMENSION || h > GIF_MAX_DIMENSION) {
+    throw new RangeError(
+      `GIF dimensions are 16-bit: ${first.width}x${first.height} frames at scale ${scale} would be ${w}x${h}; the limit is ${GIF_MAX_DIMENSION} per side`,
+    );
+  }
   const gif = GIFEncoder();
 
   for (const frame of frames) {
@@ -252,18 +280,21 @@ export function encodeAnimationGif(
 /**
  * Save animation frames as an animated GIF file.
  * @param speed - Delay between frames in milliseconds.
- * @param scale - Nearest-neighbor upscale factor, a positive integer (default: 8 → 512×512).
+ * @param scale - Nearest-neighbor upscale factor, a positive integer (default:
+ *   the largest from 1 to 8 that keeps the output within 4096 px per side — 8
+ *   for any frame up to 512 px, so 64×64 frames save at 512×512).
  * @param maxColors - Max palette colors per frame (default: 256).
- * @throws {RangeError} When the scale is not a positive integer — nothing is written.
+ * @throws {RangeError} When the scale is not a positive integer, or the scaled
+ *   frame exceeds 65535 pixels on either side — nothing is written.
  */
 export async function saveAnimationGif(
   frames: Canvas[],
   path: string,
   speed: number,
-  scale = 8,
+  scale?: number,
   maxColors = 256,
 ): Promise<void> {
-  assertScale('saveAnimationGif', scale);
+  if (scale !== undefined) assertScale('saveAnimationGif', scale);
   const gif = encodeAnimationGif(frames, speed, scale, maxColors);
   await writeFile(path, gif);
 }

@@ -254,6 +254,56 @@ describe('encodeAnimationGif', () => {
     ]);
   });
 
+  it.each([
+    [320, 7, 2],
+    [7, 320, 3],
+    [1, 1, 1],
+  ] as const)('keeps %i×%i frame dimensions at scale %i', (width, height, scale) => {
+    const gif = encodeAnimationGif(
+      [new Canvas(width, height), new Canvas(width, height)],
+      100,
+      scale,
+    );
+    const dimensions = readGifDimensions(gif);
+
+    expect(dimensions.screen).toEqual([width * scale, height * scale]);
+    expect(dimensions.frames).toEqual([
+      [width * scale, height * scale],
+      [width * scale, height * scale],
+    ]);
+  });
+
+  // Each case stays a few MB even unguarded, so a regression fails fast instead of allocating.
+  it.each([
+    [4096, 1, 16, '65536x16'],
+    [1, 4096, 16, '16x65536'],
+    [2048, 2, 33, '67584x66'],
+  ] as const)(
+    'rejects a %i×%i frame at scale %i — GIF dimensions are 16-bit',
+    (width, height, scale, output) => {
+      const encode = () => encodeAnimationGif([new Canvas(width, height)], 100, scale);
+      expect(encode).toThrow(RangeError);
+      expect(encode).toThrow(
+        `GIF dimensions are 16-bit: ${width}x${height} frames at scale ${scale} would be ${output}; the limit is 65535 per side`,
+      );
+    },
+  );
+
+  it('accepts the largest scale that fits 16 bits', () => {
+    const gif = readGifDimensions(encodeAnimationGif([new Canvas(4096, 1)], 100, 15));
+    expect(gif.screen).toEqual([61440, 15]);
+  });
+
+  it('does not create a destination for an oversized GIF', async () => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'wide.gif');
+      await expect(saveAnimationGif([new Canvas(4096, 1)], path, 100, 16)).rejects.toThrow(
+        RangeError,
+      );
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
   it('keeps the existing empty-frame error', () => {
     expect(() => encodeAnimationGif([], 100, 1)).toThrow(
       new Error('encodeAnimationGif requires at least one frame'),
@@ -497,6 +547,97 @@ describe('scale validation', () => {
       for (const framePath of paths) {
         expect(decodePng(new Uint8Array(await readFile(framePath))).width).toBe(32);
       }
+    });
+  });
+});
+
+/** Output dimensions of each preview export called without a scale. */
+async function defaultScaleOutputs(width: number, height: number) {
+  const frames = [new Canvas(width, height), new Canvas(width, height)];
+  return withTempDir(async (directory) => {
+    const pngPath = join(directory, 'frame.png');
+    const gifPath = join(directory, 'animation.gif');
+    await savePng(frames[0]!, pngPath);
+    const framePaths = await saveAnimationPngs(frames, join(directory, 'anim'));
+    await saveAnimationGif(frames, gifPath, 100);
+
+    const pngSize = (png: Uint8Array): [number, number] => {
+      const { width: w, height: h } = decodePng(png);
+      return [w, h];
+    };
+    return {
+      savePng: pngSize(new Uint8Array(await readFile(pngPath))),
+      saveAnimationPngs: await Promise.all(
+        framePaths.map(async (p) => pngSize(new Uint8Array(await readFile(p)))),
+      ),
+      encodeAnimationGif: readGifDimensions(encodeAnimationGif(frames, 100)).screen,
+      saveAnimationGif: readGifDimensions(new Uint8Array(await readFile(gifPath))).screen,
+    };
+  });
+}
+
+describe('default preview scale', () => {
+  // Panels and every canvas up to 512 px per side keep scale 8.
+  it.each([
+    [16, 16],
+    [32, 32],
+    [64, 64],
+    [320, 7],
+    [7, 320],
+    [512, 1],
+    [1, 512],
+  ])('upscales a %i×%i canvas by 8', async (width, height) => {
+    const out = await defaultScaleOutputs(width, height);
+    const expected = [width * 8, height * 8];
+
+    expect(out).toEqual({
+      savePng: expected,
+      saveAnimationPngs: [expected, expected],
+      encodeAnimationGif: expected,
+      saveAnimationGif: expected,
+    });
+  });
+
+  // floor(4096 / longest side), held to 1–8 — a 4096×4096 canvas saves at 1, not a 3 GB buffer.
+  it.each([
+    [513, 1, 7],
+    [1, 513, 7],
+    [600, 2, 6],
+    [1000, 3, 4],
+    [2048, 1, 2],
+    [2049, 1, 1],
+    [4096, 1, 1],
+    [1, 4096, 1],
+  ])('keeps a %i×%i canvas within 4096 px per side at scale %i', async (width, height, scale) => {
+    const out = await defaultScaleOutputs(width, height);
+    const expected = [width * scale, height * scale];
+
+    expect(out).toEqual({
+      savePng: expected,
+      saveAnimationPngs: [expected, expected],
+      encodeAnimationGif: expected,
+      saveAnimationGif: expected,
+    });
+  });
+
+  it('leaves canvasToPng at scale 1', () => {
+    for (const [width, height] of [
+      [64, 64],
+      [4096, 1],
+    ] as const) {
+      const { width: w, height: h } = decodePng(canvasToPng(new Canvas(width, height)));
+      expect([w, h]).toEqual([width, height]);
+    }
+  });
+
+  it('honors an explicit scale past the default rule', async () => {
+    const wide = new Canvas(4096, 1);
+    expect(readGifDimensions(encodeAnimationGif([wide], 100, 3)).screen).toEqual([12288, 3]);
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'wide.png');
+      await savePng(wide, path, 3);
+      const { width, height } = decodePng(new Uint8Array(await readFile(path)));
+      expect([width, height]).toEqual([12288, 3]);
     });
   });
 });

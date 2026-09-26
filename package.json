@@ -31,6 +31,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./core": {
+      "types": "./dist/src/core.d.ts",
+      "default": "./dist/src/core.js"
     }
   },
   "scripts": {
@@ -38,7 +42,7 @@
     "clean": "bun run scripts/clean.ts",
     "list-skills": "bun run scripts/list-skills.ts",
     "rebuild": "bun run clean && bun run build",
-    "typecheck": "bun run tsc --noEmit",
+    "typecheck": "bun run tsc --noEmit && bun run tsc -p tests",
     "docs:check": "bun run scripts/check-docs-sync.ts",
     "devcheck": "bun run typecheck && bun run lint && bun run format:check && bun run docs:check",
     "check": "bun run devcheck && bun run test",
@@ -56,7 +60,8 @@
     "access": "public"
   },
   "files": [
-    "dist/src"
+    "dist/src",
+    "src"
   ],
   "engines": {
     "node": ">=20.9.0",

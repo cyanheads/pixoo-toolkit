@@ -1,5 +1,5 @@
 /**
- * Bitmap font rendering for 64×64 pixel displays.
+ * Bitmap font rendering onto canvases of any size.
  *
  * Two built-in sizes:
  * - `FONT_5x7`: 5 wide × 7 tall, full printable ASCII (32–126)

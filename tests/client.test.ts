@@ -486,6 +486,26 @@ describe('PixooClient.push', () => {
     },
   );
 
+  it.each([
+    [64, 7],
+    [7, 64],
+    [320, 7],
+    [64, 65],
+  ] as const)(
+    'rejects a %i×%i canvas on a 64-pixel client before making a request',
+    async (width, height) => {
+      const fetchMock = mockFetch({ error_code: 0 });
+      globalThis.fetch = fetchMock;
+      const client = new PixooClient(TEST_IP, { retries: 0 });
+
+      const promise = client.push(new Canvas(width, height));
+      await expect(promise).rejects.toThrow(
+        new RangeError(`Canvas is ${width}x${height}; client is configured for a 64x64 display`),
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([16, 32, 64] as const)('sends a matching %i-pixel canvas', async (size) => {
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
@@ -586,6 +606,39 @@ describe('PixooClient.pushAnimation', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    [64, 7],
+    [7, 64],
+    [320, 7],
+  ] as const)(
+    'rejects %i×%i frames on a 64-pixel client before making a request',
+    async (width, height) => {
+      const fetchMock = mockFetch({ error_code: 0 });
+      globalThis.fetch = fetchMock;
+      const client = new PixooClient(TEST_IP, { retries: 0 });
+
+      const promise = client.pushAnimation([new Canvas(width, height), new Canvas(width, height)]);
+      await expect(promise).rejects.toThrow(
+        new RangeError(
+          `Animation frame 0 is ${width}x${height}; client is configured for a 64x64 display`,
+        ),
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects frames that disagree only in height', async () => {
+    const fetchMock = mockFetch({ error_code: 0 });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+
+    const promise = client.pushAnimation([new Canvas(64), new Canvas(64, 7)]);
+    await expect(promise).rejects.toThrow(
+      new RangeError('Animation frame 1 is 64x7; expected 64x64'),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it.each([16, 32, 64] as const)(
     'keeps %i frame dimensions in every device request',
