@@ -99,6 +99,25 @@ export interface PixooClientOptions {
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
+/** Longest Device/PlayTFGif FileName the device answers; a longer one reboots it. */
+const MAX_GIF_URL_BYTES = 255;
+
+/**
+ * Throw RangeError for a `NaN` or infinite numeric argument before any
+ * request — `JSON.stringify` would send it to the device as `null`. An
+ * `undefined` entry is an omitted option and passes.
+ */
+function assertFiniteArgs(
+  method: string,
+  args: Readonly<Record<string, number | undefined>>,
+): void {
+  for (const [name, value] of Object.entries(args)) {
+    if (value !== undefined && !Number.isFinite(value)) {
+      throw new RangeError(`${method} ${name} must be a finite number; got ${value}`);
+    }
+  }
+}
+
 /**
  * HTTP client for a Divoom Pixoo device.
  *
@@ -261,9 +280,11 @@ export class PixooClient {
    * Push a single canvas frame to the display.
    * @param canvas - Canvas matching the client's configured size.
    * @param speed - Milliseconds per frame.
-   * @throws RangeError if the canvas does not match the client's configured size.
+   * @throws RangeError if `speed` is not finite or the canvas does not match
+   *   the client's configured size, before any request.
    */
   async push(canvas: Canvas, speed = 100): Promise<PixooResult> {
+    assertFiniteArgs('push', { speed });
     this.assertMatchesDisplay(canvas, 'Canvas');
     // A failed reset means the device will silently ignore the frame — surface it
     const reset = await this.resetGifId();
@@ -284,10 +305,12 @@ export class PixooClient {
    * @param frames - Non-empty array of equal-size Canvas instances (one per frame),
    *   each matching the client's configured size.
    * @param speed - Milliseconds per frame.
-   * @throws RangeError if the array is empty, the frames disagree with each
-   *   other, or they do not match the client's configured size.
+   * @throws RangeError if `speed` is not finite, the array is empty, the
+   *   frames disagree with each other, or they do not match the client's
+   *   configured size, before any request.
    */
   async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResult> {
+    assertFiniteArgs('pushAnimation', { speed });
     if (frames.length === 0) {
       throw new RangeError('pushAnimation requires at least one frame');
     }
@@ -324,11 +347,22 @@ export class PixooClient {
     return this.send<{ SelectIndex: number }>('Channel/GetIndex');
   }
 
+  /** @throws RangeError for a non-finite `channel`, before any request. */
   async setChannel(channel: Channel): Promise<PixooResult> {
+    assertFiniteArgs('setChannel', { channel });
     return this.send('Channel/SetIndex', { SelectIndex: channel });
   }
 
+  /**
+   * Set the display brightness. Rounds to an integer and clamps to 0–100,
+   * `±Infinity` included.
+   * @throws RangeError for `NaN`, before any request — it would serialize as
+   *   `"Brightness": null`.
+   */
   async setBrightness(brightness: number): Promise<PixooResult> {
+    if (Number.isNaN(brightness)) {
+      throw new RangeError(`setBrightness brightness must be a number; got ${brightness}`);
+    }
     return this.send('Channel/SetBrightness', {
       Brightness: Math.max(0, Math.min(100, Math.round(brightness))),
     });
@@ -338,12 +372,20 @@ export class PixooClient {
     return this.send('Channel/OnOffScreen', { OnOff: on ? 1 : 0 });
   }
 
+  /** @throws RangeError for a non-finite `clockId`, before any request. */
   async setClock(clockId: number): Promise<PixooResult> {
+    assertFiniteArgs('setClock', { clockId });
     return this.send('Channel/SetClockSelectId', { ClockId: clockId });
   }
 
   // --- Text overlay ---
 
+  /**
+   * Show a text overlay (Draw/SendHttpText). `width` defaults to the
+   * client's display size.
+   * @throws RangeError for a non-finite number among `id`, `x`, `y`, `dir`,
+   *   `font`, `width`, `speed`, and `align`, before any request.
+   */
   async sendText(opts: {
     id: number;
     x: number;
@@ -356,6 +398,8 @@ export class PixooClient {
     color?: ColorLike;
     align?: number;
   }): Promise<PixooResult> {
+    const { id, x, y, dir, font, width, speed, align } = opts;
+    assertFiniteArgs('sendText', { id, x, y, dir, font, width, speed, align });
     const rgb = resolveColor(opts.color ?? [255, 255, 255]);
     const hex = rgbToHex(rgb);
     const colorStr = `#${hex.toString(16).padStart(6, '0')}`;
@@ -373,17 +417,23 @@ export class PixooClient {
     });
   }
 
+  /** @throws RangeError for a non-finite `id`, before any request. */
   async clearText(id: number): Promise<PixooResult> {
+    assertFiniteArgs('clearText', { id });
     return this.send('Draw/ClearHttpText', { TextId: id });
   }
 
   // --- Tools ---
 
+  /** @throws RangeError for a non-finite score, before any request. */
   async setScoreboard(blue: number, red: number): Promise<PixooResult> {
+    assertFiniteArgs('setScoreboard', { blue, red });
     return this.send('Tools/SetScoreBoard', { BlueScore: blue, RedScore: red });
   }
 
+  /** @throws RangeError for non-finite `minutes` or `seconds`, before any request. */
   async setTimer(minutes: number, seconds: number, start = true): Promise<PixooResult> {
+    assertFiniteArgs('setTimer', { minutes, seconds });
     return this.send('Tools/SetTimer', {
       Minute: minutes,
       Second: seconds,
@@ -402,12 +452,42 @@ export class PixooClient {
 
   // --- System ---
 
+  /** @throws RangeError for a non-finite timing, before any request. */
   async playBuzzer(activeCycleMs = 500, offCycleMs = 500, totalMs = 3000): Promise<PixooResult> {
+    assertFiniteArgs('playBuzzer', { activeCycleMs, offCycleMs, totalMs });
     return this.send('Device/PlayBuzzer', {
       ActiveTimeInCycle: activeCycleMs,
       OffTimeInCycle: offCycleMs,
       PlayTotalTime: totalMs,
     });
+  }
+
+  /**
+   * Play a GIF the device downloads from `url` and loops (Device/PlayTFGif,
+   * FileType 2). One command replaces a `Draw/SendHttpGif` request per frame,
+   * so the frame ceiling of `pushAnimation()` does not apply. The caller hosts
+   * the file; http and https both work.
+   *
+   * `ok: true` means only that the device accepted the command. It replies
+   * before it downloads, and still reports success for a 404, an unreachable
+   * host, or a file that is not a GIF — never that the GIF downloaded or played.
+   * A GIF that is not 16×16, 32×32, or 64×64 reboots the device once it has
+   * downloaded.
+   *
+   * Not held back by `minPushInterval`, and does not delay the next frame send.
+   *
+   * @param url - URL of the GIF, at most 255 bytes as UTF-8.
+   * @throws RangeError if `url` is over 255 bytes as UTF-8, before any request —
+   *   the device gives no reply to a longer FileName and reboots.
+   */
+  async playGifUrl(url: string): Promise<PixooResult> {
+    const bytes = new TextEncoder().encode(url).length;
+    if (bytes > MAX_GIF_URL_BYTES) {
+      throw new RangeError(
+        `GIF URL is ${bytes} bytes as UTF-8; Device/PlayTFGif accepts at most ${MAX_GIF_URL_BYTES}, and a longer FileName reboots the device`,
+      );
+    }
+    return this.send('Device/PlayTFGif', { FileType: 2, FileName: url });
   }
 
   /**

@@ -310,6 +310,34 @@ describe('PixooClient convenience methods', () => {
     expect(body.Brightness).toBe(0);
   });
 
+  it.each([
+    [Number.POSITIVE_INFINITY, 100],
+    [Number.NEGATIVE_INFINITY, 0],
+    [100, 100],
+    [0, 0],
+    [49.5, 50],
+    [50.4, 50],
+    [-0.4, 0],
+    [100.4, 100],
+  ])('setBrightness(%d) sends Brightness %i', async (input, sent) => {
+    const client = new PixooClient(TEST_IP);
+    const res = await client.setBrightness(input);
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+      Command: 'Channel/SetBrightness',
+      Brightness: sent,
+    });
+  });
+
+  it('setBrightness(NaN) throws RangeError without sending a request', async () => {
+    const client = new PixooClient(TEST_IP);
+    const promise = client.setBrightness(Number.NaN);
+    await expect(promise).rejects.toThrow(RangeError);
+    await expect(promise).rejects.toThrow('setBrightness brightness must be a number; got NaN');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('setScreen sends OnOff flag', async () => {
     const client = new PixooClient(TEST_IP);
     await client.setScreen(true);
@@ -392,6 +420,18 @@ describe('PixooClient convenience methods', () => {
     expect(body.PlayTotalTime).toBe(1000);
   });
 
+  it('playGifUrl sends only Device/PlayTFGif with FileType 2 and the URL', async () => {
+    const client = new PixooClient(TEST_IP);
+    const url = 'http://192.0.2.10:8765/a.gif';
+
+    const res = await client.playGifUrl(url);
+
+    expect(res).toEqual({ ok: true, data: { error_code: 0 } });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(body).toEqual({ Command: 'Device/PlayTFGif', FileType: 2, FileName: url });
+  });
+
   it('batch sends CommandList', async () => {
     const client = new PixooClient(TEST_IP);
     const commands = [
@@ -401,6 +441,309 @@ describe('PixooClient convenience methods', () => {
     await client.batch(commands);
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body).toEqual({ Command: 'Draw/CommandList', CommandList: commands });
+  });
+
+  /** Finite arguments go out unchanged — fractional and negative ones included. */
+  it.each<[string, (c: PixooClient) => Promise<PixooResult>, Record<string, unknown>]>([
+    [
+      'setTimer',
+      (c) => c.setTimer(2.5, -1, false),
+      { Command: 'Tools/SetTimer', Minute: 2.5, Second: -1, Status: 0 },
+    ],
+    [
+      'setScoreboard',
+      (c) => c.setScoreboard(0, 999.5),
+      { Command: 'Tools/SetScoreBoard', BlueScore: 0, RedScore: 999.5 },
+    ],
+    ['setClock', (c) => c.setClock(-7), { Command: 'Channel/SetClockSelectId', ClockId: -7 }],
+    [
+      'playBuzzer',
+      (c) => c.playBuzzer(0.5, 0, 12345),
+      {
+        Command: 'Device/PlayBuzzer',
+        ActiveTimeInCycle: 0.5,
+        OffTimeInCycle: 0,
+        PlayTotalTime: 12345,
+      },
+    ],
+    [
+      'playBuzzer defaults',
+      (c) => c.playBuzzer(),
+      {
+        Command: 'Device/PlayBuzzer',
+        ActiveTimeInCycle: 500,
+        OffTimeInCycle: 500,
+        PlayTotalTime: 3000,
+      },
+    ],
+    [
+      'sendText defaults',
+      (c) => c.sendText({ id: 1, x: 0, y: 0, text: 'hi' }),
+      {
+        Command: 'Draw/SendHttpText',
+        TextId: 1,
+        x: 0,
+        y: 0,
+        dir: 0,
+        font: 0,
+        TextWidth: 64,
+        TextString: 'hi',
+        speed: 0,
+        color: '#ffffff',
+        align: 1,
+      },
+    ],
+    [
+      'sendText with every option',
+      (c) =>
+        c.sendText({
+          id: 3,
+          x: -2.5,
+          y: 40,
+          text: 'score',
+          dir: 1,
+          font: 18,
+          width: 32,
+          speed: 100,
+          color: 'cyan',
+          align: 2,
+        }),
+      {
+        Command: 'Draw/SendHttpText',
+        TextId: 3,
+        x: -2.5,
+        y: 40,
+        dir: 1,
+        font: 18,
+        TextWidth: 32,
+        TextString: 'score',
+        speed: 100,
+        color: '#00ffff',
+        align: 2,
+      },
+    ],
+    [
+      'setChannel',
+      (c) => c.setChannel(Channel.Faces),
+      { Command: 'Channel/SetIndex', SelectIndex: 0 },
+    ],
+    ['clearText', (c) => c.clearText(-1.5), { Command: 'Draw/ClearHttpText', TextId: -1.5 }],
+  ])('%s sends its finite arguments unchanged', async (_name, call, body) => {
+    const client = new PixooClient(TEST_IP);
+    const res = await call(client);
+    expect(res).toEqual({ ok: true, data: { error_code: 0 } });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual(body);
+  });
+});
+
+describe('PixooClient non-finite arguments', () => {
+  let originalFetch: typeof globalThis.fetch;
+  let fetchMock: ReturnType<typeof mockFetch>;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    fetchMock = mockFetch({ error_code: 0 });
+    globalThis.fetch = fetchMock;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const NON_FINITE: [string, number][] = [
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ];
+
+  type Call = (c: PixooClient, v: number) => Promise<PixooResult>;
+
+  const GUARDED: [method: string, param: string, call: Call][] = [
+    ['setTimer', 'minutes', (c, v) => c.setTimer(v, 5)],
+    ['setTimer', 'seconds', (c, v) => c.setTimer(1, v)],
+    ['setScoreboard', 'blue', (c, v) => c.setScoreboard(v, 1)],
+    ['setScoreboard', 'red', (c, v) => c.setScoreboard(1, v)],
+    ['setClock', 'clockId', (c, v) => c.setClock(v)],
+    ['playBuzzer', 'activeCycleMs', (c, v) => c.playBuzzer(v, 500, 1000)],
+    ['playBuzzer', 'offCycleMs', (c, v) => c.playBuzzer(500, v, 1000)],
+    ['playBuzzer', 'totalMs', (c, v) => c.playBuzzer(500, 500, v)],
+    ['sendText', 'id', (c, v) => c.sendText({ id: v, x: 0, y: 0, text: 'hi' })],
+    ['sendText', 'x', (c, v) => c.sendText({ id: 1, x: v, y: 0, text: 'hi' })],
+    ['sendText', 'y', (c, v) => c.sendText({ id: 1, x: 0, y: v, text: 'hi' })],
+    ['sendText', 'dir', (c, v) => c.sendText({ id: 1, x: 0, y: 0, text: 'hi', dir: v })],
+    ['sendText', 'font', (c, v) => c.sendText({ id: 1, x: 0, y: 0, text: 'hi', font: v })],
+    ['sendText', 'width', (c, v) => c.sendText({ id: 1, x: 0, y: 0, text: 'hi', width: v })],
+    ['sendText', 'speed', (c, v) => c.sendText({ id: 1, x: 0, y: 0, text: 'hi', speed: v })],
+    ['sendText', 'align', (c, v) => c.sendText({ id: 1, x: 0, y: 0, text: 'hi', align: v })],
+    ['setChannel', 'channel', (c, v) => c.setChannel(v as Channel)],
+    ['clearText', 'id', (c, v) => c.clearText(v)],
+    ['push', 'speed', (c, v) => c.push(new Canvas(), v)],
+    ['pushAnimation', 'speed', (c, v) => c.pushAnimation([new Canvas(), new Canvas()], v)],
+  ];
+
+  const cases = GUARDED.flatMap(([method, param, call]) =>
+    NON_FINITE.map(
+      ([valueName, value]) =>
+        [method, param, valueName, call, value] as [string, string, string, Call, number],
+    ),
+  );
+
+  it.each(cases)(
+    '%s rejects %s = %s before any request',
+    async (method, param, valueName, call, value) => {
+      const promise = call(new PixooClient(TEST_IP), value);
+      await expect(promise).rejects.toThrow(RangeError);
+      await expect(promise).rejects.toThrow(
+        `${method} ${param} must be a finite number; got ${valueName}`,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sends nothing for the reproduction calls, which went out with null before (issue repro)', async () => {
+    const device = new PixooClient(TEST_IP);
+    const calls = [
+      () => device.setTimer(Number.NaN, 5),
+      () => device.setScoreboard(Number.NaN, 1),
+      () => device.setClock(Number.NaN),
+      () => device.playBuzzer(Number.NaN, 500, 1000),
+      () => device.sendText({ id: 1, x: Number.NaN, y: 0, text: 'hi' }),
+      () => device.setChannel(Number.NaN),
+      () => device.clearText(Number.NaN),
+      () => device.push(new Canvas(), Number.NaN),
+      () => device.pushAnimation([new Canvas(), new Canvas()], Number.POSITIVE_INFINITY),
+    ];
+    for (const call of calls) await expect(call()).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('checks sendText numbers before resolving its color', async () => {
+    const promise = new PixooClient(TEST_IP).sendText({
+      id: 1,
+      x: Number.NaN,
+      y: 0,
+      text: 'hi',
+      color: 'not-a-color',
+    });
+    await expect(promise).rejects.toThrow('sendText x must be a finite number; got NaN');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('PixooClient.playGifUrl', () => {
+  /** 26 ASCII bytes; each test pads it to the byte length under test. */
+  const BASE = 'http://192.0.2.10/a.gif?q=';
+  const utf8Length = (s: string) => new TextEncoder().encode(s).length;
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it.each([
+    ['ASCII', BASE + 'x'.repeat(229)],
+    ['2-byte characters', BASE + 'é'.repeat(114) + 'x'],
+    ['4-byte characters', BASE + '🎞'.repeat(57) + 'x'],
+  ])('sends a 255-byte URL of %s unchanged', async (_label, url) => {
+    expect(utf8Length(url)).toBe(255);
+    const fetchMock = mockFetch({ error_code: 0 });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+
+    const res = await client.playGifUrl(url);
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).FileName).toBe(url);
+  });
+
+  /** The multi-byte rows stay under 256 UTF-16 code units, so only a byte count rejects them. */
+  it.each([
+    ['ASCII', BASE + 'x'.repeat(230), 256, 256],
+    ['2-byte characters', BASE + 'é'.repeat(115), 141, 256],
+    ['4-byte characters', BASE + '🎞'.repeat(58), 142, 258],
+    ['ASCII, far over the limit', BASE + 'x'.repeat(300), 326, 326],
+  ])('rejects a URL of %s before making a request', async (_label, url, units, bytes) => {
+    expect(url.length).toBe(units);
+    expect(utf8Length(url)).toBe(bytes);
+    const fetchMock = mockFetch({ error_code: 0 });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+
+    const promise = client.playGifUrl(url);
+
+    await expect(promise).rejects.toThrow(RangeError);
+    await expect(promise).rejects.toThrow(
+      `GIF URL is ${bytes} bytes as UTF-8; Device/PlayTFGif accepts at most 255`,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns a device failure for a non-zero error_code', async () => {
+    globalThis.fetch = mockFetch({ error_code: 1 });
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+
+    const res = await client.playGifUrl('http://192.0.2.10/a.gif');
+
+    expect(res).toEqual({
+      ok: false,
+      kind: 'device',
+      deviceCode: 1,
+      message: 'Device rejected Device/PlayTFGif (error_code 1)',
+    });
+  });
+
+  it('returns a non-retryable HTTP failure after one request', async () => {
+    const fetchMock = mockFetch({ error_code: 0 }, 404);
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 0 });
+
+    const res = await client.playGifUrl('http://192.0.2.10/a.gif');
+
+    expect(res).toMatchObject({ ok: false, kind: 'http', status: 404 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('retries transient failures with the same command until one succeeds', async () => {
+    const url = 'https://192.0.2.10/a.gif';
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException('The operation was aborted', 'AbortError'))
+      .mockResolvedValueOnce(mockResponse({ error_code: 0 }, 503))
+      .mockResolvedValueOnce(mockResponse({ error_code: 0 }));
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 0 });
+
+    const res = await client.playGifUrl(url);
+
+    expect(res).toEqual({ ok: true, data: { error_code: 0 } });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, opts] of fetchMock.mock.calls) {
+      expect(JSON.parse(opts.body)).toEqual({
+        Command: 'Device/PlayTFGif',
+        FileType: 2,
+        FileName: url,
+      });
+    }
+  });
+
+  it('returns the last failure once the retry budget is spent', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockRejectedValue(new DOMException('The operation was aborted', 'AbortError'));
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 0 });
+
+    const res = await client.playGifUrl('http://192.0.2.10/a.gif');
+
+    expect(res).toEqual({ ok: false, kind: 'timeout', message: 'Request timed out' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -806,6 +1149,49 @@ describe('PixooClient frame throttling', () => {
 
     expect(frameTimes()).toHaveLength(3);
     for (const gap of frameGaps()) expect(gap).toBeGreaterThanOrEqual(INTERVAL - 5);
+  });
+
+  it('does not delay a GIF URL play behind a frame', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.push(new Canvas());
+    const started = Date.now();
+    await client.playGifUrl('http://192.0.2.10/a.gif');
+    const elapsed = Date.now() - started;
+
+    expect(sends.map((s) => s.command)).toEqual([
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+      'Device/PlayTFGif',
+    ]);
+    expect(elapsed).toBeLessThan(INTERVAL / 2);
+  });
+
+  it('does not delay the next frame behind a GIF URL play', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.playGifUrl('http://192.0.2.10/a.gif');
+    const started = Date.now();
+    await client.push(new Canvas());
+    const elapsed = Date.now() - started;
+
+    expect(sends.map((s) => s.command)).toEqual([
+      'Device/PlayTFGif',
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+    ]);
+    expect(elapsed).toBeLessThan(INTERVAL / 2);
+  });
+
+  it('keeps spacing frames from the previous frame across a GIF URL play', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
+
+    await client.push(new Canvas());
+    await client.playGifUrl('http://192.0.2.10/a.gif');
+    await client.push(new Canvas());
+
+    expect(frameTimes()).toHaveLength(2);
+    expect(frameGaps()[0]).toBeGreaterThanOrEqual(INTERVAL - 5);
   });
 
   it('does not delay non-draw commands behind a frame', async () => {
