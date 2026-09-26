@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-09-26
+
+### Added
+
+- **canvas:** `new Canvas(width, height)` and `new Canvas(size)` take any integer dimensions from 1 to 4096, throwing `RangeError` for anything else, and `Canvas.fromRgba(rgba, width, height)` copies straight-alpha RGBA bytes of any valid size (#44).
+- **image:** `loadAnimation()` decodes every frame of an animated GIF or WebP to a `LoadedAnimation` (`frames`, `delays`, `sourceFrames`), each frame placed as `loadImage()` places a still; `maxFrames` samples a longer source evenly and sums the delays each kept frame stands in for (#48).
+- **image:** `loadImage()` and `downsampleSprite()` accept encoded image bytes — a `Buffer` or any `Uint8Array` — in place of a file path (#43).
+- **core:** new `@cyanheads/pixoo-toolkit/core` entry exports the canvas, color, font, svg-path, and animation modules with no Node built-in or package in their import graph, so a bundler can target the browser; the main entry re-exports it, so both share one `Canvas` (#49).
+- **index:** barrel now exports `loadAnimation` and `type LoadedAnimation` (#48).
+
+### Changed
+
+- **canvas:** `new Canvas(buffer)` with a length that matches no panel size throws `RangeError` instead of `Error`, and the message points to `Canvas.fromRgba` for other dimensions (#44).
+- **canvas:** `toBase64()` encodes with the web-standard `btoa` instead of the Node `Buffer` global, so it runs in a browser (#49).
+- **preview:** `savePng()`, `saveAnimationPngs()`, `encodeAnimationGif()`, and `saveAnimationGif()` default `scale` to the largest integer from 1 to 8 that keeps the output within 4096 px per side, so the default drops below 8 for canvases over 512 px per side (#44).
+- **image:** `renderSprite()`'s default `scale` is `floor(min(width / cols, height / rows))`, fitting the grid inside a non-square canvas (#44).
+
+### Fixed
+
+- **image:** `loadImage()` now resizes from the full-resolution decode for every format, so the default `nearest` kernel returns only source colors on WebP and JPEG downscales instead of pixels sharp's shrink-on-load had already blended (#52).
+- **color:** `resolveColor()` throws and `tryResolveColor()` returns `null` for `Object.prototype` names such as `constructor` and `__proto__`, in any case, instead of returning the prototype member (#51).
+- **preview:** `encodeAnimationGif()` and `saveAnimationGif()` throw `RangeError` when the scaled frame exceeds 65535 px on either side, instead of writing a GIF whose 16-bit dimensions overflow (#44).
+- **packaging:** the package ships `src/` beside `dist/src`, so every published `.js.map` and `.d.ts.map` resolves and go-to-definition reaches the TypeScript source (#42).
+
 ## [0.8.2] — 2026-08-13
 
 ### Fixed
