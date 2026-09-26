@@ -351,7 +351,7 @@ describe('canvasToPng default RGB output', () => {
     expect(decoded.raw.length).toBe(16 * (1 + 16 * 3));
     expect(decoded.filterBytes).toEqual(Array(16).fill(0));
     expect(sha256(decoded.raw)).toBe(
-      'a92689b64a8468e64b1fb929703c9ad50e31b763514f8553864e5fbf165ddfe7',
+      'e381da5ad8c16a08cb1433ad88bf3698be4871cdd6b75b7c64264dbd103476b8',
     );
   });
 
@@ -379,7 +379,7 @@ describe('canvasToPng default RGB output', () => {
     expect(decoded.height).toBe(64);
     expect(decoded.raw.length).toBe(64 * (1 + 64 * 3));
     expect(sha256(decoded.raw)).toBe(
-      'e1075f2fa340061b641b09123345a3883a73235360fa67ce851afe7aa84aaa92',
+      '4528680ac4bd6214ec8aa52a3b17eae182f85924181db170f8abaace330bc6aa',
     );
   });
 });

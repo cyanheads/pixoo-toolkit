@@ -640,6 +640,245 @@ describe('strokeSubpaths', () => {
   });
 });
 
+describe('non-finite points', () => {
+  const NON_FINITE: [string, number][] = [
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ];
+
+  type Draw = (canvas: Canvas, subpaths: Point[][], color: string) => void;
+  const DRAWS: [string, Draw][] = [
+    ['strokeSubpaths', strokeSubpaths],
+    ['fillSubpaths', fillSubpaths],
+  ];
+
+  /** Two drawable rings, `bad` replacing one coordinate of the third point of the second. */
+  const rings = (axis: 'x' | 'y', bad: number): Point[][] => [
+    [
+      { x: 1, y: 1 },
+      { x: 12, y: 1 },
+      { x: 12, y: 6 },
+    ],
+    [
+      { x: 2, y: 8 },
+      { x: 13, y: 8 },
+      axis === 'x' ? { x: bad, y: 14 } : { x: 13, y: bad },
+      { x: 2, y: 14 },
+    ],
+  ];
+
+  /** A 16×16 canvas carrying one translucent pixel, so any write shows. */
+  const seeded = (): Canvas => new Canvas(16).setPixel(0, 15, [1, 2, 3], 17);
+
+  it.each(
+    DRAWS.flatMap(([method, draw]) =>
+      NON_FINITE.flatMap(([name, value]) =>
+        (['x', 'y'] as const).map((axis) => [method, name, axis, draw, value] as const),
+      ),
+    ),
+  )(
+    '%s rejects %s as a later point %s of a later subpath before drawing',
+    (method, _name, axis, draw, value) => {
+      const c = seeded();
+      const before = new Uint8Array(c.buffer);
+      expect(() => draw(c, rings(axis, value), 'red')).toThrow(
+        new RangeError(`${method} point coordinates must be finite`),
+      );
+      expect(c.buffer).toEqual(before);
+    },
+  );
+
+  it.each(DRAWS)(
+    '%s names itself for the issue repro, before any pixel changes',
+    (method, draw) => {
+      const ring = [
+        [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: Number.NaN, y: 5 },
+        ],
+      ];
+      const c = new Canvas(16);
+      expect(() => draw(c, ring, 'red')).toThrow(
+        new RangeError(`${method} point coordinates must be finite`),
+      );
+      expect(litPixels(c)).toEqual([]);
+    },
+  );
+
+  it.each(DRAWS)('%s validates the points before resolving the color', (method, draw) => {
+    expect(() => draw(seeded(), rings('x', Number.NaN), 'not-a-color')).toThrow(
+      new RangeError(`${method} point coordinates must be finite`),
+    );
+  });
+
+  it.each(DRAWS)('%s rejects a non-finite point in a ring too short to draw', (method, draw) => {
+    const c = seeded();
+    const before = new Uint8Array(c.buffer);
+    const short = [...rings('x', 5).slice(0, 1), [{ x: Number.NaN, y: 3 }]];
+    expect(() => draw(c, short, 'red')).toThrow(
+      new RangeError(`${method} point coordinates must be finite`),
+    );
+    expect(c.buffer).toEqual(before);
+  });
+
+  it.each(DRAWS)('%s still draws the same rings with every point finite', (_method, draw) => {
+    const c = new Canvas(16);
+    draw(c, rings('y', 14), 'red');
+    expect(litPixels(c).length).toBeGreaterThan(0);
+  });
+
+  it('fillPolygon names itself for a non-finite point, before any pixel changes', () => {
+    const c = seeded();
+    const before = new Uint8Array(c.buffer);
+    const triangle = [
+      { x: 1, y: 1 },
+      { x: 12, y: 1 },
+      { x: 6, y: Number.POSITIVE_INFINITY },
+    ];
+    expect(() => fillPolygon(c, triangle, 'not-a-color')).toThrow(
+      new RangeError('fillPolygon point coordinates must be finite'),
+    );
+    expect(() => fillPolygon(c, triangle, 'red')).toThrow(
+      new RangeError('fillPolygon point coordinates must be finite'),
+    );
+    expect(c.buffer).toEqual(before);
+  });
+});
+
+describe('renderSvgPath non-finite input', () => {
+  const NON_FINITE: [string, number][] = [
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ];
+  const MODES: [string, { mode: 'fill' | 'stroke' } | undefined][] = [
+    ['fill', undefined],
+    ['stroke', { mode: 'stroke' }],
+  ];
+  const SQUARE = 'M1 1 L12 1 L12 12 L1 12 Z';
+  const PATH_ERROR = new RangeError('renderSvgPath path coordinates must be finite');
+  const VIEW_BOX_ERROR = new RangeError('renderSvgPath svgViewBox dimensions must be finite');
+  const TARGET_ERROR = new RangeError(
+    'renderSvgPath targetRect coordinates and dimensions must be finite',
+  );
+
+  /** A 16×16 canvas carrying one translucent pixel, so any write shows. */
+  const seeded = (): Canvas => new Canvas(16).setPixel(0, 15, [1, 2, 3], 17);
+
+  /** Each path parses to at least one non-finite coordinate, by a different command. */
+  const PATHS: [string, string][] = [
+    ['an L x of 1e999', 'M0 0 L1e999 5 L0 10'],
+    ['an L y of -1e999', 'M0 0 L5 -1e999 L0 10'],
+    ['an M of 1e999', 'M1e999 0 L5 5 L0 10'],
+    ['an H of 1e999', 'M0 0 H1e999 V10 Z'],
+    ['a V of -1e999', 'M0 0 V-1e999 H10 Z'],
+    ['a C control point of 1e999', 'M0 0 C1e999 0 10 10 0 10 Z'],
+    ['a Q end point of 1e999', 'M0 0 Q5 5 0 1e999 Z'],
+    ['an A end point of 1e999', 'M0 0 A5 5 0 0 1 1e999 5 Z'],
+    ['relative offsets summing past the largest double', 'm1e308 0 l1e308 0 l0 5 z'],
+    ['a later subpath after a drawable one', `${SQUARE} M2 8 L13 8 L1e999 14 Z`],
+  ];
+
+  it.each(
+    PATHS.flatMap(([name, d]) => MODES.map(([mode, opts]) => [name, mode, d, opts] as const)),
+  )('rejects %s in %s mode before drawing', (_name, _mode, d, opts) => {
+    const c = seeded();
+    const before = new Uint8Array(c.buffer);
+    expect(() => renderSvgPath(c, d, 'red', [16, 16], undefined, opts)).toThrow(PATH_ERROR);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it.each(
+    [0, 1].flatMap((index) =>
+      NON_FINITE.flatMap(([name, value]) =>
+        MODES.map(([mode, opts]) => [index, name, mode, value, opts] as const),
+      ),
+    ),
+  )('rejects svgViewBox entry %i = %s in %s mode before drawing', (index, _n, _m, value, opts) => {
+    const viewBox: [number, number] = [16, 16];
+    viewBox[index] = value;
+    const c = seeded();
+    const before = new Uint8Array(c.buffer);
+    expect(() => renderSvgPath(c, SQUARE, 'red', viewBox, undefined, opts)).toThrow(VIEW_BOX_ERROR);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it.each(
+    [0, 1, 2, 3].flatMap((index) =>
+      NON_FINITE.flatMap(([name, value]) =>
+        MODES.map(([mode, opts]) => [index, name, mode, value, opts] as const),
+      ),
+    ),
+  )('rejects targetRect entry %i = %s in %s mode before drawing', (index, _n, _m, value, opts) => {
+    const target: [number, number, number, number] = [0, 0, 16, 16];
+    target[index] = value;
+    const c = seeded();
+    const before = new Uint8Array(c.buffer);
+    expect(() => renderSvgPath(c, SQUARE, 'red', [16, 16], target, opts)).toThrow(TARGET_ERROR);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it('names renderSvgPath for each issue repro, before any pixel changes', () => {
+    const d = 'M0 0 L8 0 L8 8 Z';
+    const cases: [(c: Canvas) => void, RangeError][] = [
+      [(c) => renderSvgPath(c, 'M0 0 L1e999 5 L0 10', 'red'), PATH_ERROR],
+      [(c) => renderSvgPath(c, d, 'red', [Number.NaN, 16]), VIEW_BOX_ERROR],
+      [(c) => renderSvgPath(c, d, 'red', [Number.POSITIVE_INFINITY, 16]), VIEW_BOX_ERROR],
+    ];
+    for (const [call, error] of cases) {
+      const c = new Canvas(16, 16);
+      expect(() => call(c)).toThrow(error);
+      expect(litPixels(c)).toEqual([]);
+    }
+  });
+
+  it('validates every source before resolving the color', () => {
+    expect(() => renderSvgPath(seeded(), 'M0 0 L1e999 5 L0 10', 'not-a-color')).toThrow(PATH_ERROR);
+    expect(() => renderSvgPath(seeded(), SQUARE, 'not-a-color', [16, Number.NaN])).toThrow(
+      VIEW_BOX_ERROR,
+    );
+    expect(() =>
+      renderSvgPath(seeded(), SQUARE, 'not-a-color', [16, 16], [0, Number.NaN, 16, 16]),
+    ).toThrow(TARGET_ERROR);
+  });
+
+  it('checks the svgViewBox, then the targetRect, then the path', () => {
+    const bad = 'M0 0 L1e999 5 L0 10';
+    const badTarget: [number, number, number, number] = [0, 0, Number.NaN, 16];
+    expect(() => renderSvgPath(seeded(), bad, 'red', [Number.NaN, 16], badTarget)).toThrow(
+      VIEW_BOX_ERROR,
+    );
+    expect(() => renderSvgPath(seeded(), bad, 'red', [16, 16], badTarget)).toThrow(TARGET_ERROR);
+  });
+
+  it('rejects a non-finite svgViewBox entry even when the other is zero', () => {
+    for (const viewBox of [
+      [0, Number.NaN],
+      [Number.POSITIVE_INFINITY, 0],
+    ] as [number, number][]) {
+      expect(() => renderSvgPath(seeded(), SQUARE, 'red', viewBox)).toThrow(VIEW_BOX_ERROR);
+    }
+  });
+
+  it('draws nothing for a zero svgViewBox dimension without reading the path', () => {
+    const c = seeded();
+    const before = new Uint8Array(c.buffer);
+    renderSvgPath(c, 'M0 0 L1e999 5 L0 10', 'red', [0, 16]);
+    expect(c.buffer).toEqual(before);
+  });
+
+  it.each(MODES)(
+    'still renders a path whose largest coordinate is finite in %s mode',
+    (_m, opts) => {
+      const c = new Canvas(16);
+      renderSvgPath(c, 'M0 0 L1e308 5 L0 10', 'red', [16, 16], undefined, opts);
+      expect(litPixels(c).length).toBeGreaterThan(0);
+    },
+  );
+});
+
 describe('renderSvgPath stroke mode', () => {
   const CHEVRON = 'M6,4 L12,10 L6,16';
 

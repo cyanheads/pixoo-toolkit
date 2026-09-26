@@ -435,12 +435,34 @@ export function parseSvgPath(d: string): Point[] {
 }
 
 /**
+ * Reject a non-finite coordinate in any point of any ring, rings too short to
+ * draw included, naming the function the caller invoked rather than the
+ * canvas method it delegates to.
+ */
+function assertFinitePoints(
+  subpaths: readonly (readonly Point[])[],
+  method: 'fillSubpaths' | 'fillPolygon' | 'strokeSubpaths',
+): void {
+  for (const ring of subpaths) {
+    for (const { x, y } of ring) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new RangeError(`${method} point coordinates must be finite`);
+      }
+    }
+  }
+}
+
+/**
  * Even-odd scanline fill across one or more point rings.
  * Each ring is implicitly closed (last point connects back to the first),
  * so unclosed paths fill like their Z-terminated equivalents. Overlapping
  * rings produce holes, per SVG even-odd fill semantics.
+ *
+ * @throws {RangeError} When a coordinate of any point in any ring is not
+ *   finite — before the color resolves.
  */
 export function fillSubpaths(canvas: Canvas, subpaths: readonly Point[][], color: ColorLike): void {
+  assertFinitePoints(subpaths, 'fillSubpaths');
   const rings = subpaths.filter((ring) => ring.length >= 3);
   if (rings.length === 0) return;
   const rgb = resolveColor(color);
@@ -485,8 +507,14 @@ export function fillSubpaths(canvas: Canvas, subpaths: readonly Point[][], color
   }
 }
 
-/** Scanline fill a single polygon ring (implicitly closed) onto a canvas. */
+/**
+ * Scanline fill a single polygon ring (implicitly closed) onto a canvas.
+ *
+ * @throws {RangeError} When a coordinate of any point is not finite — before
+ *   the color resolves.
+ */
 export function fillPolygon(canvas: Canvas, points: Point[], color: ColorLike): void {
+  assertFinitePoints([points], 'fillPolygon');
   fillSubpaths(canvas, [points], color);
 }
 
@@ -500,16 +528,18 @@ export function fillPolygon(canvas: Canvas, points: Point[], color: ColorLike): 
  * ring's last point, so the closing segment falls out of the same walk. Rings
  * of fewer than 2 points have no segment to draw and are skipped.
  *
- * Stroke width, joins, caps, and dashes are out of scope — a 1-pixel stroke is
- * what a Pixoo panel can express.
+ * Stroke width, joins, caps, and dashes are not interpreted: every segment is
+ * a 1-pixel `drawLine`.
  *
- * @throws {RangeError} When any point coordinate is not finite.
+ * @throws {RangeError} When a coordinate of any point in any ring is not
+ *   finite — before the color resolves or any segment is drawn.
  */
 export function strokeSubpaths(
   canvas: Canvas,
   subpaths: readonly Point[][],
   color: ColorLike,
 ): void {
+  assertFinitePoints(subpaths, 'strokeSubpaths');
   const rgb = resolveColor(color);
   for (const ring of subpaths) {
     for (let i = 0; i + 1 < ring.length; i++) {
@@ -530,11 +560,15 @@ export interface RenderSvgPathOptions {
 }
 
 /**
- * Render an SVG path onto a canvas, scaled and translated.
+ * Render an SVG path onto a canvas, scaled and translated. A zero `svgViewBox`
+ * width or height draws nothing, and the path is not read.
  *
  * @param svgViewBox - Original SVG viewBox dimensions [width, height]
  * @param targetRect - Where to render on canvas [x, y, width, height]
  * @param options - Selects fill (default) or stroke rendering
+ * @throws {RangeError} When an `svgViewBox` or `targetRect` entry is not
+ *   finite, or a coordinate of the path is not finite as parsed or once
+ *   scaled into `targetRect` — before the color resolves or anything is drawn.
  */
 export function renderSvgPath(
   canvas: Canvas,
@@ -544,7 +578,13 @@ export function renderSvgPath(
   targetRect?: [number, number, number, number],
   options?: RenderSvgPathOptions,
 ): void {
+  if (!svgViewBox.every(Number.isFinite)) {
+    throw new RangeError('renderSvgPath svgViewBox dimensions must be finite');
+  }
   const [tx, ty, tw, th] = targetRect ?? [0, 0, canvas.width, canvas.height];
+  if (![tx, ty, tw, th].every(Number.isFinite)) {
+    throw new RangeError('renderSvgPath targetRect coordinates and dimensions must be finite');
+  }
   const [vw, vh] = svgViewBox;
   if (vw === 0 || vh === 0) return;
   const subpaths = parseSvgPathSubpathsAtScale(d, tw / vw, th / vh);
@@ -555,6 +595,9 @@ export function renderSvgPath(
       y: ty + (p.y / vh) * th,
     })),
   );
+  if (!scaled.every((ring) => ring.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)))) {
+    throw new RangeError('renderSvgPath path coordinates must be finite');
+  }
 
   const render = options?.mode === 'stroke' ? strokeSubpaths : fillSubpaths;
   render(canvas, scaled, color);
