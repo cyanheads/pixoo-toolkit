@@ -4,7 +4,7 @@ description: >
   Land verified working-tree changes in `@cyanheads/pixoo-toolkit` as a stack of logical commits, bump the version, author the CHANGELOG entry, and cut an annotated tag. Stops at "committed and tagged locally" — no push, no publish; `release-and-publish` picks up from there.
 metadata:
   author: cyanheads
-  version: '1.0'
+  version: '1.1'
   audience: external
   type: workflow
 ---
@@ -25,7 +25,7 @@ Every item must be true before you touch a version number. If one is red, fix it
 - [ ] **`bun run devcheck` passes** — typecheck, ESLint, Prettier, and the `CLAUDE.md`/`AGENTS.md` byte-identity check
 - [ ] **`bun run test:all` passes** — clean rebuild plus the full Vitest suite
 - [ ] **Regression test added** — a bug fix without a test that fails on the old code is not finished
-- [ ] **Public API reviewed** — anything newly exported is in `src/index.ts`, and no exported signature changed without a matching version bump tier
+- [ ] **Public API reviewed** — anything newly exported is in `src/index.ts`, or in `src/core.ts` when it comes from `canvas`, `color`, `font`, `svg-path`, or `animation` (the barrel re-exports it), and no exported signature changed without a matching version bump tier
 - [ ] **Issues updated** — GitHub issues this work addresses have a comment saying what landed
 - [ ] **Docs updated** — surgical edits to `README.md` and `CLAUDE.md`, not rewrites
 

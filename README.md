@@ -24,14 +24,14 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 
 | Module | What it does |
 |---|---|
-| **Canvas** | Square RGBA pixel buffer (16/32/64) — alpha-aware source-over compositing, pixel access, rects, circles, lines, triangles, 3 gradient modes, clone, scrolling; exports flatten to device RGB |
+| **Canvas** | RGBA pixel buffer at a panel size (16/32/64) or any width × height up to 4096 for layers and strips — alpha-aware source-over compositing, pixel access, rects, circles, lines, triangles, 3 gradient modes, clone, scrolling; exports flatten to device RGB |
 | **Bitmap Fonts** | Two built-in sizes (5×7 full ASCII, 3×5 compact with lowercase) with tight proportional metrics, measurement, and centered rendering |
 | **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing — strict resolution (typos throw, `tryResolveColor` to probe) |
 | **Device Client** | Full Pixoo HTTP API — frames, animations, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success. Pushed canvases must match the configured display size, and `minPushInterval` spaces frames to respect the firmware's push limit |
-| **Image Loading** | Alpha-preserving resize to canvas via sharp, sprite downsampling with color classification |
+| **Image Loading** | Alpha-preserving resize to canvas via sharp from a file path or in-memory bytes, always from the full-resolution decode, so the default nearest-neighbor kernel keeps pixel art crisp in every format; animated GIF and WebP decoded to frames with their delays; sprite downsampling with color classification |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves and elliptical arcs) and rasterize with even-odd scanline fill — multi-subpath holes — or as 1-pixel strokes, for the `fill="none"` outline icons most icon sets ship |
-| **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling at any positive integer scale. PNG defaults to alpha flattened over black — what the panel shows — with `{ alpha: true }` to keep the alpha channel instead |
+| **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling at any positive integer scale (by default 8, lowered so a large canvas stays within 4096 px per side). PNG defaults to alpha flattened over black — what the panel shows — with `{ alpha: true }` to keep the alpha channel instead |
 
 ## Getting Started
 
@@ -127,6 +127,40 @@ renderSprite(c, sprite.grid, { scale: 4, y: 24 });
 await savePng(c, 'output/sprite.png');
 ```
 
+Both also take encoded bytes — a `Buffer` or any `Uint8Array` — so an image you already hold needs no temp file:
+
+```typescript
+const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+const fetched = await loadImage(bytes, { fit: 'cover' });
+```
+
+`loadAnimation` decodes every frame of an animated GIF or WebP, each on its own canvas. The device takes one speed per animation and turns unstable above ~40 frames, so cap with `maxFrames` — it samples a longer source evenly and sums the delays each kept frame stands in for:
+
+```typescript
+import { loadAnimation } from '@cyanheads/pixoo-toolkit';
+
+const anim = await loadAnimation('assets/loop.gif', { size: 64, fit: 'contain', maxFrames: 40 });
+const speed = Math.round(anim.delays.reduce((sum, d) => sum + d, 0) / anim.frames.length);
+await device.pushAnimation(anim.frames, speed);
+```
+
+### Canvases of Any Size
+
+`new Canvas(width, height)` (or `new Canvas(size)` for a square) takes any dimensions from 1 to 4096, and `Canvas.fromRgba(bytes, width, height)` copies RGBA data of any size. Only a canvas the size of the panel can be pushed; other sizes are layers you `blit` from — here, text rendered once to a wide strip and scrolled across the panel:
+
+```typescript
+import { Canvas, drawText, measureText } from '@cyanheads/pixoo-toolkit';
+
+const message = 'Rendered once, scrolled by offset';
+const strip = new Canvas(measureText(message) + 64, 7);
+drawText(strip, message, 64, 0, 'white');
+
+const frames = Array.from({ length: 40 }, (_, i) =>
+  new Canvas().clear('black').blit(strip, -i * 4, 28),
+);
+await device.pushAnimation(frames, 80);
+```
+
 ### SVG Paths
 
 Pass the `d` attribute and the source `viewBox`; the path is scaled into the target rect.
@@ -145,20 +179,35 @@ renderSvgPath(canvas, outlineIcon, 'cyan', [24, 24], [32, 8, 24, 24], { mode: 's
 
 Fill is the default. Reach for `{ mode: 'stroke' }` when the source path is `fill="none" stroke="..."` — the outline style Lucide, Feather, and Heroicons outline ship — since filling one of those paints the region the outline encloses rather than the outline itself. Stroke is 1 pixel wide; `stroke-width`, joins, caps, and dashes are not interpreted.
 
+### Browsers and Bundlers
+
+The main entry loads sharp, `node:zlib`, and `node:fs/promises`, so it needs Node or Bun. `@cyanheads/pixoo-toolkit/core` exports the canvas, color, font, SVG path, and animation modules, none of which reach a Node built-in or a package, so a bundler can target the browser with them:
+
+```typescript
+import { Canvas, drawText, FONT_5x7 } from '@cyanheads/pixoo-toolkit/core';
+
+const canvas = new Canvas(64);
+drawText(canvas, 'HI', 1, 1, 'cyan', { font: FONT_5x7 });
+const picData = canvas.toBase64(); // Draw/SendHttpGif payload, no Buffer needed
+```
+
+Both entries share one `Canvas` class, so a canvas drawn through `/core` pushes with `PixooClient` from the main entry. The device client, image loading, and PNG/GIF export stay on the main entry. TypeScript resolves the `/core` subpath under `moduleResolution` `node16`, `nodenext`, or `bundler`.
+
 ## Project Structure
 
 ```
 src/
-  canvas.ts       Square pixel buffer (16/32/64) + drawing primitives
+  canvas.ts       RGBA pixel buffer (panel sizes or any size up to 4096) + drawing primitives
   client.ts       PixooClient — HTTP device control (all Pixoo sizes)
   color.ts        RGB/HSL types, named colors, utilities
   font.ts         Bitmap fonts, text rendering
-  image.ts        Image loading (sharp), sprite downsampling
+  image.ts        Image + animated GIF/WebP loading (sharp), sprite downsampling
   animation.ts    Multi-frame animation builder
   preview.ts      PNG + animated GIF encoder
   svg-path.ts     SVG path parser + polygon rasterizer (fill and stroke)
-  index.ts        Barrel export
-tests/            Vitest tests (one per src module)
+  core.ts         Browser-safe entry (/core): canvas, color, font, SVG, animation
+  index.ts        Barrel export — core plus the device client, image, and preview
+tests/            Vitest tests — one per module, plus packaging.test.ts (entries, browser bundle, packed files); type-checked via tests/tsconfig.json
 scripts/          Runnable display scripts
 assets/           Source images (PNGs) for sprites
 output/           Generated PNG previews (gitignored)

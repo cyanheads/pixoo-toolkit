@@ -4,7 +4,7 @@ description: >
   Take a locally committed and tagged version of `@cyanheads/pixoo-toolkit` public — push the commits and tag, publish to npm, and cut the GitHub Release from the tag message. Picks up exactly where `git-wrapup` stops.
 metadata:
   author: cyanheads
-  version: '1.0'
+  version: '1.1'
   audience: external
   type: workflow
 ---
@@ -70,7 +70,7 @@ Push the branch before the tag. A tag pointing at a commit the remote does not h
 bun publish --access public
 ```
 
-`files` in `package.json` is `["dist/src"]`, so the published tarball carries only the compiled library — not `scripts/`, `tests/`, or `assets/`. `prepublishOnly` rebuilds from clean, so `dist/` is regenerated as part of this command.
+`files` in `package.json` is `["dist/src", "src"]`, so the published tarball carries the compiled library and the TypeScript sources its source maps point at — not `scripts/`, `tests/`, or `assets/`. `prepublishOnly` rebuilds from clean, so `dist/` is regenerated as part of this command.
 
 Confirm the contents before trusting the publish:
 

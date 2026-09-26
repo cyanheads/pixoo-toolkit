@@ -84,7 +84,7 @@ This is the primary way to push custom visuals to the device.
 
 **Limits & quirks:**
 - **Must call `Draw/ResetHttpGifId` before pushing** — without this, the device silently ignores frames. The `PixooClient.push()` method does this automatically.
-- Max ~40 frames before potential device crash
+- Max ~40 frames before potential device crash — `loadAnimation`'s `maxFrames` samples a longer GIF/WebP down to fit
 - Each new animation triggers a ~5s "Loading.." overlay
 - `Draw/CommandList` CANNOT batch multi-frame sends — must loop individual `Draw/SendHttpGif` calls
 - Display may freeze after ~300 consecutive pushes (firmware bug) — periodically reset connection. Space pushes ~1s apart to stay clear of it; the `minPushInterval` client option does this for `push()` and `pushAnimation()`
@@ -197,17 +197,18 @@ assets/         Source images (PNGs) for sprites — drop files here
 scripts/        Reusable display scripts plus shared env config and tooling (env, clean, check-docs-sync, list-skills)
 output/         Generated PNG previews — do not commit
 src/
-  canvas.ts     Square RGBA pixel buffer (16/32/64) + drawing primitives; exports flatten to device RGB
+  canvas.ts     RGBA pixel buffer (panel sizes 16/32/64, or any width × height 1–4096 via new Canvas(w, h) / Canvas.fromRgba) + drawing primitives; exports flatten to device RGB
   client.ts     PixooClient — HTTP device control, PixooResult on every call, size-matched pushes, optional frame throttle, LAN discovery
   color.ts      RGB/HSL types, named colors, lerp, dim; strict resolveColor / tryResolveColor
   font.ts       Bitmap fonts (FONT_5x7 and FONT_3x5, both full printable ASCII), drawText, measureText
-  image.ts      Image loading (sharp, alpha-preserving), sprite downsampling + rendering
+  image.ts      Image loading from a path or bytes (sharp, alpha-preserving), animated GIF/WebP frames via loadAnimation, sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
   preview.ts    Zero-dep PNG encoder, savePng() with opt-in RGBA; animated GIF export via gifenc
   svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer, 1px stroke mode for outline paths
   gifenc.d.ts   Local type declarations for gifenc (ships none)
-  index.ts      Barrel export
-tests/          Vitest tests (one per src module)
+  core.ts       Browser-safe entry, published as ./core — re-exports canvas, color, font, svg-path, animation
+  index.ts      Barrel export — re-exports core.ts, plus client, image, preview
+tests/          Vitest tests — one per module, plus packaging.test.ts (both entries, the ./core browser bundle, packed files and source maps); type-checked through tests/tsconfig.json by `bun run typecheck`
 ```
 
 Scripts go in `scripts/`, output PNGs go in `output/`, source images go in `assets/`.
@@ -243,6 +244,8 @@ const canvas = await loadImage('assets/photo.png');
 // Or render into a region of an existing canvas
 await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20 });
 ```
+
+`loadImage` and `downsampleSprite` also take encoded bytes (`Buffer` or any `Uint8Array`) in place of a path — no temp file for an image already in memory. `loadAnimation` decodes every frame of an animated GIF or WebP to `{ frames, delays, sourceFrames }`, with `maxFrames` for the device's ~40-frame limit.
 
 ## Tech Stack
 
@@ -291,6 +294,9 @@ Each reads `PIXOO_IP` and `PIXOO_SIZE` through `deviceFromEnv()` in `scripts/env
 - Keep frame count under 40 for stability
 - Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug — `new PixooClient(ip, { minPushInterval: 1000 })` enforces it
 - A pushed canvas must match the client's configured `size`; a mismatch throws `RangeError` instead of sending a frame the panel can't render
+- `canvas`, `color`, `font`, `svg-path`, and `animation` stay free of Node built-ins, packages, and Node globals (`Buffer`, `process`, `require`) — `src/core.ts` publishes them as the browser entry, and `tests/packaging.test.ts` bundles it with `bun build --target=browser` to enforce that
+- The package ships `src/` beside `dist/src` so every published `.js.map` and `.d.ts.map` resolves; keep `files` covering both while `tsconfig.json` emits maps
+- `loadImage` and `loadAnimation` both go through `decodeImage` in `src/image.ts`, which decodes a raster source to full-resolution raw pixels before any resize. Resizing `sharp(input)` directly lets sharp's shrink-on-load (WebP, JPEG) pre-blend pixels before the kernel runs, and lets the two callers drift apart
 
 ## Skills
 
