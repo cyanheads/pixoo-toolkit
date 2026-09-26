@@ -78,13 +78,22 @@ function clampByte(v: number): number {
 }
 
 /**
+ * Look up a named color case-insensitively. Only own keys of `NAMED_COLORS`
+ * match, so `Object.prototype` members such as `constructor` never resolve.
+ */
+function namedColor(name: string): RGB | null {
+  const key = name.toLowerCase();
+  return Object.hasOwn(NAMED_COLORS, key) ? NAMED_COLORS[key]! : null;
+}
+
+/**
  * Resolve any ColorLike to an RGB tuple, or null when a string is
  * unresolvable. Tuple and number inputs always resolve (tuple components
  * are clamped to 0–255 integers).
  */
 export function tryResolveColor(c: ColorLike): RGB | null {
   if (typeof c === 'number') return hexToRgb(c);
-  if (typeof c === 'string') return NAMED_COLORS[c.toLowerCase()] ?? parseHexString(c);
+  if (typeof c === 'string') return namedColor(c) ?? parseHexString(c);
   return [clampByte(c[0] ?? 0), clampByte(c[1] ?? 0), clampByte(c[2] ?? 0)];
 }
 

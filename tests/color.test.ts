@@ -277,6 +277,20 @@ describe('resolveColor', () => {
   });
 });
 
+describe('named-color lookup', () => {
+  const PROTOTYPE_NAMES = Object.getOwnPropertyNames(Object.prototype);
+
+  it('covers the prototype names that shadow a lowercase lookup', () => {
+    expect(PROTOTYPE_NAMES).toEqual(expect.arrayContaining(['constructor', '__proto__']));
+  });
+
+  it.each([
+    ...new Set(PROTOTYPE_NAMES.flatMap((name) => [name, name.toLowerCase(), name.toUpperCase()])),
+  ])('rejects the Object.prototype name %s from both resolvers', (name) => {
+    expectInvalidColorString(name);
+  });
+});
+
 describe('tryResolveColor', () => {
   it('returns null instead of throwing for unresolvable strings', () => {
     expect(tryResolveColor('notacolor')).toBeNull();
@@ -404,6 +418,17 @@ describe('NAMED_COLORS', () => {
     expect(NAMED_COLORS['gray']).toEqual(NAMED_COLORS['grey']);
     expect(NAMED_COLORS['darkgray']).toEqual(NAMED_COLORS['darkgrey']);
     expect(NAMED_COLORS['lightgray']).toEqual(NAMED_COLORS['lightgrey']);
+  });
+
+  it('resolves every entry by name, in any case, to its tuple', () => {
+    const entries = Object.entries(NAMED_COLORS);
+    expect(entries.length).toBeGreaterThan(30);
+    for (const [name, rgb] of entries) {
+      for (const spelling of [name, name.toUpperCase()]) {
+        expect(resolveColor(spelling), spelling).toEqual(rgb);
+        expect(tryResolveColor(spelling), spelling).toEqual(rgb);
+      }
+    }
   });
 });
 
