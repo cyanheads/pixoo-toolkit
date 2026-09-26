@@ -84,12 +84,14 @@ This is the primary way to push custom visuals to the device.
 
 **Limits & quirks:**
 - **Must call `Draw/ResetHttpGifId` before pushing** — without this, the device silently ignores frames. The `PixooClient.push()` method does this automatically.
-- Max ~40 frames before potential device crash — `loadAnimation`'s `maxFrames` samples a longer GIF/WebP down to fit
+- Max ~40 frames before potential device crash — `loadAnimation`'s `maxFrames` samples a longer GIF/WebP down to fit. `Device/PlayTFGif` from a URL has no such ceiling (see System)
 - Each new animation triggers a ~5s "Loading.." overlay
 - `Draw/CommandList` CANNOT batch multi-frame sends — must loop individual `Draw/SendHttpGif` calls
 - Display may freeze after ~300 consecutive pushes (firmware bug) — periodically reset connection. Space pushes ~1s apart to stay clear of it; the `minPushInterval` client option does this for `push()` and `pushAnimation()`
 - Previous frame may partially bleed through (firmware buffer issue)
 - `PicWidth` must match the panel — a canvas of any other size renders garbled or not at all. `PixooClient` throws `RangeError` rather than sending one
+- On a Pixoo-64 at brightness 100, drive levels 0–4 stay dark; light rises steadily from about level 5
+- Mid-level channel values render darker on the LEDs than on an sRGB monitor, which shifts muted warm colors toward red: `#D97757` reads red on the panel, the toolkit's named `claude` (`#E69646`) reads as a light orange, and `#E07A32` reads as the intended orange
 
 #### Text / Scrolling
 
@@ -107,9 +109,31 @@ Font list: `https://app.divoom-gz.com/Device/GetTimeDialFontList`
 | Command | Description | Key Parameters |
 |---|---|---|
 | `Sys/GetConf` | Get system config | — |
-| `Sys/PlayTFGif` | Play GIF from SD card | `FileName` |
+| `Device/PlayTFGif` | Play a GIF from an SD-card file (`FileType` 0) or folder (1), or from a URL the device downloads (2) | `FileType`, `FileName` |
 | `Sys/SetText` | System text | — |
 | `Device/SetUTC` | Set timezone/UTC offset | `Utc` |
+
+##### `Device/PlayTFGif` — GIF from a URL
+
+```json
+{
+  "Command": "Device/PlayTFGif",
+  "FileType": 2,
+  "FileName": "http://<host>/loop.gif"
+}
+```
+
+The device downloads the GIF and loops it — one command in place of a `Draw/SendHttpGif` per frame. `PixooClient.playGifUrl()` wraps `FileType` 2; the client has no method for the SD-card types.
+
+**Limits & quirks** (measured on a Pixoo-64 whose API reports no firmware version):
+- The device replies `error_code: 0` before it downloads, and still returns 0 for a 404, a refused connection, a server that never responds, or a file that is not a GIF — `ok: true` means the command was accepted, nothing more
+- A `FileName` longer than 255 bytes gets no reply, and the device reboots. `playGifUrl()` throws `RangeError` for a URL over 255 bytes (UTF-8) instead of sending it
+- 16×16, 32×32 and 64×64 GIFs download without fault; 48×48, 64×32 and 128×128 each rebooted the device after downloading
+- No frame or size ceiling up to 800 frames or 4 MB (the largest tested): each downloaded completely and the device stayed responsive
+- `https` works, and a self-signed certificate is accepted — the device does not validate certificates
+- A response that has not started within ~5 s is abandoned; a stalled download does not block other commands
+- Each play fetches the file once; `Channel/GetIndex` and `Draw/GetHttpGifId` do not change, and a later `push()` is accepted
+- `minPushInterval` does not apply — a play is one command, not a frame
 
 #### Tools
 
@@ -152,7 +176,7 @@ Font list: `https://app.divoom-gz.com/Device/GetTimeDialFontList`
 
 **Sleep:** `Sleep/ExitTest`, `Sleep/Get`, `Sleep/Set`, `Sleep/Test`
 
-**System:** `Sys/GetConf`, `Sys/PlayTFGif`, `Sys/SetAPO`, `Sys/SetConf`, `Sys/SetLightBack`, `Sys/SetLightColor`, `Sys/SetLightFront`, `Sys/SetLogo`, `Sys/SetNotifySound`, `Sys/SetText`, `Sys/SetTextDirection`, `Sys/TimeZoneSearch`
+**System:** `Sys/GetConf`, `Sys/PlayTFGif`, `Sys/SetAPO`, `Sys/SetConf`, `Sys/SetLightBack`, `Sys/SetLightColor`, `Sys/SetLightFront`, `Sys/SetLogo`, `Sys/SetNotifySound`, `Sys/SetText`, `Sys/SetTextDirection`, `Sys/TimeZoneSearch` — the APK names `Sys/PlayTFGif`, but the local API plays GIFs through `Device/PlayTFGif`
 
 **TimePlan:** `TimePlan/Change`, `TimePlan/Close`, `TimePlan/Del`, `TimePlan/GetList`, `TimePlan/GetPlan`, `TimePlan/Set`
 
@@ -197,16 +221,17 @@ assets/         Source images (PNGs) for sprites — drop files here
 scripts/        Reusable display scripts plus shared env config and tooling (env, clean, check-docs-sync, list-skills)
 output/         Generated PNG previews — do not commit
 src/
-  canvas.ts     RGBA pixel buffer (panel sizes 16/32/64, or any width × height 1–4096 via new Canvas(w, h) / Canvas.fromRgba) + drawing primitives; exports flatten to device RGB
-  client.ts     PixooClient — HTTP device control, PixooResult on every call, size-matched pushes, optional frame throttle, LAN discovery
+  canvas.ts     RGBA pixel buffer (panel sizes 16/32/64, or any width × height 1–4096 via new Canvas(w, h) / Canvas.fromRgba) + drawing primitives with alpha, stroke width, and anti-aliased lines and circles; blit blend modes (normal/add/screen/multiply); exports flatten to device RGB
+  client.ts     PixooClient — HTTP device control, PixooResult on every call, size-matched pushes, optional frame throttle, GIF playback from a URL, LAN discovery
   color.ts      RGB/HSL types, named colors, lerp, dim; strict resolveColor / tryResolveColor
-  font.ts       Bitmap fonts (FONT_5x7 and FONT_3x5, both full printable ASCII), drawText, measureText
+  font.ts       Bitmap fonts (FONT_5x7 and FONT_3x5: printable ASCII plus ° ← ↑ → ↓ ▲ ▼ ♥ · …; FONT_DIGITS_11x18 numerals), optional per-glyph GlyphMetrics, parseBdf (BDF text → BitmapFont), code-point drawText / measureText
   image.ts      Image loading from a path or bytes (sharp, alpha-preserving), animated GIF/WebP frames via loadAnimation, sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
   preview.ts    Zero-dep PNG encoder, savePng() with opt-in RGBA; animated GIF export via gifenc
   svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer, 1px stroke mode for outline paths
+  finish.ts     LED finishing — downsample (exact area average in linear light), quantize (variance-split palette or a given one; none/bayer4/floyd-steinberg dither), correctForPanel / simulatePanel (map through a measured [drive, light] response)
   gifenc.d.ts   Local type declarations for gifenc (ships none)
-  core.ts       Browser-safe entry, published as ./core — re-exports canvas, color, font, svg-path, animation
+  core.ts       Browser-safe entry, published as ./core — re-exports canvas, color, font, svg-path, animation, finish
   index.ts      Barrel export — re-exports core.ts, plus client, image, preview
 tests/          Vitest tests — one per module, plus packaging.test.ts (both entries, the ./core browser bundle, packed files and source maps); type-checked through tests/tsconfig.json by `bun run typecheck`
 ```
@@ -278,7 +303,7 @@ await loadImage('assets/icon.png', { canvas, x: 10, y: 10, width: 20, height: 20
 | `hello-claude-animated.ts` | 20-frame animation: bouncing/winking Clawd + text | `bun dist/scripts/hello-claude-animated.js` |
 | `demo.ts` | README header generator: space-themed canvas with orbs, gradients, text. Fixed 64×64 composition — rejects a non-64 `PIXOO_SIZE` | `bun dist/scripts/demo.js` |
 | `color-test.ts` | 4×4 color calibration chart (16 named swatches) | `bun dist/scripts/color-test.js` |
-| `font-test.ts` | Visual test for FONT_5x7 and FONT_3x5 with mixed-case rendering | `bun dist/scripts/font-test.js` |
+| `font-test.ts` | Two-frame font sheet, alternating every 4 s: FONT_5x7 and FONT_3x5 mixed case and ASCII symbols, then the glyphs past ASCII in both fonts and FONT_DIGITS_11x18 (`output/font_test.png`, `output/font_test_2.png`) | `bun dist/scripts/font-test.js` |
 
 All scripts: `bun run build && bun dist/scripts/<name>.js`
 
@@ -294,7 +319,9 @@ Each reads `PIXOO_IP` and `PIXOO_SIZE` through `deviceFromEnv()` in `scripts/env
 - Keep frame count under 40 for stability
 - Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug — `new PixooClient(ip, { minPushInterval: 1000 })` enforces it
 - A pushed canvas must match the client's configured `size`; a mismatch throws `RangeError` instead of sending a frame the panel can't render
-- `canvas`, `color`, `font`, `svg-path`, and `animation` stay free of Node built-ins, packages, and Node globals (`Buffer`, `process`, `require`) — `src/core.ts` publishes them as the browser entry, and `tests/packaging.test.ts` bundles it with `bun build --target=browser` to enforce that
+- A `PixooClient` method taking a number throws `RangeError` naming the method and parameter for `NaN` or `±Infinity` before any request — `JSON.stringify` would send it as `null`. `setBrightness()` alone clamps `±Infinity`
+- Canvas, font, and SVG path functions reject non-finite geometry and options with a `RangeError` that names the function the caller invoked, never a delegate, checked before the color resolves and before anything is drawn
+- `canvas`, `color`, `font`, `svg-path`, `animation`, and `finish` stay free of Node built-ins, packages, and Node globals (`Buffer`, `process`, `require`) — `src/core.ts` publishes them as the browser entry, and `tests/packaging.test.ts` bundles it with `bun build --target=browser` to enforce that
 - The package ships `src/` beside `dist/src` so every published `.js.map` and `.d.ts.map` resolves; keep `files` covering both while `tsconfig.json` emits maps
 - `loadImage` and `loadAnimation` both go through `decodeImage` in `src/image.ts`, which decodes a raster source to full-resolution raw pixels before any resize. Resizing `sharp(input)` directly lets sharp's shrink-on-load (WebP, JPEG) pre-blend pixels before the kernel runs, and lets the two callers drift apart
 

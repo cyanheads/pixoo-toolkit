@@ -32,6 +32,7 @@ body:
         - Animation
         - PNG or GIF export
         - SVG paths
+        - LED finishing
         - PixooClient
         - Packaging or developer experience
         - New subsystem

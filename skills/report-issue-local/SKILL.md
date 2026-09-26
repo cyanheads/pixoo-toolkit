@@ -4,7 +4,7 @@ description: >
   File a bug or feature request against `cyanheads/pixoo-toolkit` — dedup search, title and label conventions, body structure matching the repo's issue forms, and the redaction rules for a public repo that talks to LAN devices.
 metadata:
   author: cyanheads
-  version: '1.0'
+  version: '1.1'
   audience: external
   type: workflow
 ---
@@ -17,7 +17,7 @@ Triage first — not every Pixoo problem is a toolkit problem:
 
 | Signal | Where it belongs |
 |:---|:---|
-| Wrong pixels from a pure function (`canvas`, `color`, `font`, `svg-path`, `preview`) | Here |
+| Wrong pixels from a pure function (`canvas`, `color`, `font`, `svg-path`, `finish`, `preview`) | Here |
 | `PixooClient` builds a malformed request, or misreads a well-formed response | Here |
 | Types wrong, export missing from `src/index.ts`, packaging broken | Here |
 | The device ignores or mangles a correctly-formed request | Firmware — document it in `CLAUDE.md` under limits and quirks, not as a toolkit bug |
@@ -119,7 +119,7 @@ ISSUE
 Format: `type(scope): description`
 
 - **type:** `bug`, `feat`, `docs`, `chore`, `security`
-- **scope:** the `src/` module — `canvas`, `client`, `color`, `font`, `image`, `animation`, `preview`, `svg-path` — or `deps`, `packaging`, `types`
+- **scope:** the `src/` module — `canvas`, `client`, `color`, `font`, `image`, `animation`, `preview`, `svg-path`, `finish` — or `deps`, `packaging`, `types`
 
 Describe the observable defect, not the suspected cause. `bug(color): hslToRgb returns out-of-range values for hues above 360` beats `bug(color): modulo bug`.
 
