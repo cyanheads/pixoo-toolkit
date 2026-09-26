@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-09-26
+
+### Added
+
+- **finish:** `downsample(canvas, width, height)` shrinks a canvas by exact area averaging in linear light, color weighted by alpha, so no output channel leaves the range of the source pixels it covers and hard edges don't ring (#45).
+- **finish:** `quantize(canvas, options)` reduces a canvas to a palette built by variance split (`colors`, 2–256) or to a given `palette`, with `dither` set to `'none'`, `'bayer4'`, or `'floyd-steinberg'`; alpha passes through (#45).
+- **finish:** `correctForPanel(canvas, response)` returns the frame to push so the panel shows the canvas under a measured `[drive, light]` `PanelResponse`, and `simulatePanel(canvas, response)` shows what the panel displays for a frame pushed as is (#45).
+- **canvas:** `blit()` takes a `mode`: `'normal'` (source-over, the default), `'add'`, `'screen'`, or `'multiply'` (#46).
+- **canvas:** `fillRect()`, `fillCircle()`, `fillTriangle()`, `drawRect()`, `drawLine()`, and `drawCircle()` take a trailing options object with `alpha` (0–1, composited source-over, each pixel once); the three strokes also take `width` in whole pixels, and `drawLine()` and `drawCircle()` take `antialias` (#46).
+- **font:** `FONT_5x7` and `FONT_3x5` gain `° ← ↑ → ↓ ▲ ▼ ♥ · …` (#47).
+- **font:** `parseBdf(text)` reads the text of a BDF font into a `BitmapFont`, placing each glyph by its `BBX` and `DWIDTH` through the new optional `metrics` map of `GlyphMetrics` (#47).
+- **font:** `FONT_DIGITS_11x18` sets `0–9`, space, and `: . - + / % ° ?` as 11×18 numerals on one 13-pixel advance, so a clock keeps its width as the time changes (#47).
+- **client:** `playGifUrl(url)` has the device download and loop a GIF from a URL (`Device/PlayTFGif`, `FileType` 2) and throws `RangeError` before any request for a URL over 255 bytes as UTF-8; `ok: true` means only that the device accepted the command (#50).
+- **core:** `downsample`, `quantize`, `correctForPanel`, `simulatePanel`, `parseBdf`, `FONT_DIGITS_11x18`, and the types `Dither`, `QuantizeOptions`, `PanelResponse`, `GlyphMetrics`, `BlendMode`, `BlitOptions`, `FillOptions`, and `StrokeOptions` are exported from both the main entry and `/core` (#45, #46, #47).
+
+### Changed
+
+- **canvas:** `fillCircle()` fills the pixels with `dx² + dy² ≤ r² + r` at every radius, where it used `dx² + dy² ≤ r²`, so every filled circle's pixels change, an integer-radius disc loses the one-pixel nub at each axis end, and the fractional-radius `drawCircle()` ring follows (#63).
+- **canvas:** a 1px `drawCircle()` keeps the midpoint ring only at an integer center and radius; any other center or radius draws the edge of the `fillCircle()` footprint about the exact center, so the outline stays on the disc (#58, #65).
+- **client:** a `NaN` or infinite number passed to `setTimer()`, `setScoreboard()`, `setClock()`, `playBuzzer()`, `sendText()`, `setChannel()`, `clearText()`, or the `speed` of `push()` and `pushAnimation()` throws `RangeError` naming the method and parameter before any request, where JSON sent it as `null`; `setBrightness()` throws for `NaN` and still clamps `±Infinity` (#53, #60).
+- **font:** `drawText()`, `measureText()`, and `drawTextCentered()` throw `RangeError` naming the function for a non-finite position, region, or `letterSpacing`, or a `scale` that is not a finite number of at least 1, where they returned `NaN` or drew nothing (#61).
+- **font:** `drawText()` and `measureText()` read code points, so a character outside the Basic Multilingual Plane is one glyph or one `?`, and a font whose cell or any `metrics` entry is wider than 32 pixels throws `RangeError` (#47).
+- **svg-path:** `fillSubpaths()`, `fillPolygon()`, and `strokeSubpaths()` check every point before drawing and throw `RangeError` naming themselves for a non-finite coordinate, where the error named the canvas method they delegate to and `strokeSubpaths()` had already drawn the segments before the bad point (#62).
+- **svg-path:** `renderSvgPath()` throws `RangeError` naming itself for a non-finite `svgViewBox` or `targetRect` entry or path coordinate, before anything is drawn (#64).
+- **scripts:** `font-test.ts` alternates two frames, the second showing the glyphs past ASCII and `FONT_DIGITS_11x18` (#47).
+- **deps:** `vitest` ^4.1.10 → ^5.0.2, so running the test suite needs Node.js ≥ 22.12; consumers are unaffected.
+- **deps:** `sharp` ^0.35.3 → ^0.35.4, `typescript-eslint` ^8.67.0 → ^8.70.1, `eslint` ^10.8.1 → ^10.11.0, `prettier` ^3.9.6 → ^3.9.9, `@types/bun` ^1.3.14 → ^1.4.2.
+
+### Fixed
+
+- **canvas:** `blit()` floors fractional offsets before compositing, so a fractional offset no longer spreads a pixel's RGBA bytes across two pixels, and a non-finite offset throws `RangeError` instead of drawing nothing (#54).
+- **canvas:** `drawRect()` draws nothing when the region `fillRect()` fills for the same arguments is empty, instead of two stray lines for a zero or negative width or height (#55).
+- **canvas:** `setPixel()` and `blendPixel()` throw `RangeError` naming the method for a `NaN` alpha, where `blendPixel()` erased the destination pixel and `setPixel()` stored an invisible one (#56).
+- **canvas:** `drawCircle()` costs at most the canvas area however large the radius, where it walked the whole circumference — `drawCircle(32, 32, 1e15, c)` returns at once (#57).
+- **canvas:** `drawTriangle()` checks all six vertex coordinates before drawing, so a non-finite one throws `RangeError` naming `drawTriangle` with no edge drawn, instead of an error naming `drawLine` (#59).
+
 ## [0.9.0] — 2026-09-26
 
 ### Added
