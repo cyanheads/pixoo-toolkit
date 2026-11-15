@@ -336,6 +336,10 @@ if (!res.ok) console.error(`${res.kind}: ${res.message}`);
 
 `ok: true` means the device accepted the command, not that the GIF played: it replies before downloading, and reports success for a 404, an unreachable host, or a file that isn't a GIF. Serve a 16×16, 32×32, or 64×64 GIF — any other size reboots the device once it downloads. `encodeAnimationGif(frames, speed, 1)` writes one at the panel's size; its default scale of 8 does not. A URL over 255 bytes (UTF-8) throws `RangeError` without sending a request — the device gives no reply to one and reboots. A play waits its turn behind a push still sending, but `minPushInterval` doesn't hold it back; a play is one command.
 
+## Contributing
+
+Bugs, feature requests, and ideas go through [issues](https://github.com/cyanheads/pixoo-toolkit/issues/new/choose) — [CONTRIBUTING.md](.github/CONTRIBUTING.md) covers what makes one actionable, including how to tell a toolkit bug from a firmware quirk. Report vulnerabilities privately per [SECURITY.md](.github/SECURITY.md).
+
 ## License
 
 [Apache 2.0](LICENSE)
