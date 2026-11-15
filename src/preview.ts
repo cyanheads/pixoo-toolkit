@@ -134,13 +134,13 @@ function encodePng(
   return png;
 }
 
-/** Nearest-neighbor upscale of a `channels`-byte-per-pixel buffer. */
+/** Nearest-neighbor upscale of a `channels`-byte-per-pixel buffer (1 = GIF palette indices). */
 function upscale(
   pixels: Uint8Array,
   srcW: number,
   srcH: number,
   scale: number,
-  channels: Channels,
+  channels: 1 | Channels,
 ): Uint8Array {
   const dstW = srcW * scale;
   const dstH = srcH * scale;
@@ -233,15 +233,37 @@ function rgbToRgba(rgb: Uint8Array): Uint8Array {
 /** GIF stores its logical screen and frame dimensions as unsigned 16-bit fields. */
 const GIF_MAX_DIMENSION = 0xffff;
 
+/** Longest frame delay a GIF holds: a 16-bit count of centiseconds. */
+const GIF_MAX_DELAY_MS = 0xffff * 10;
+
 /**
- * Encode animation frames as an animated GIF buffer.
- * @param speed - Delay between frames in milliseconds.
+ * Reject a frame delay or palette size the GIF format cannot hold. A negative
+ * delay wraps to 655 s in the 16-bit field and NaN encodes as 0; more than
+ * 256 colors overflows the color table and corrupts the file.
+ */
+function assertGifOptions(method: string, speed: number, maxColors: number): void {
+  if (!(speed >= 0 && speed <= GIF_MAX_DELAY_MS)) {
+    throw new RangeError(
+      `${method} speed must be a delay from 0 to ${GIF_MAX_DELAY_MS} ms; got ${speed}`,
+    );
+  }
+  if (!Number.isInteger(maxColors) || maxColors < 1 || maxColors > 256) {
+    throw new RangeError(`${method} maxColors must be an integer from 1 to 256; got ${maxColors}`);
+  }
+}
+
+/**
+ * Encode animation frames as an animated GIF buffer. Each frame is quantized
+ * to its own palette at source resolution, then upscaled.
+ * @param speed - Delay between frames in milliseconds, 0 to 655350 (GIF
+ *   stores it rounded to centiseconds).
  * @param scale - Nearest-neighbor upscale factor, a positive integer (default:
  *   the largest from 1 to 8 that keeps the output within 4096 px per side — 8
  *   for any frame up to 512 px, so 64×64 frames encode at 512×512).
- * @param maxColors - Max palette colors per frame (default: 256).
- * @throws {RangeError} When the scale is not a positive integer, or the scaled
- *   frame exceeds 65535 pixels on either side.
+ * @param maxColors - Max palette colors per frame, an integer from 1 to 256 (default: 256).
+ * @throws {RangeError} When the scale is not a positive integer, the speed or
+ *   maxColors is out of range, or the scaled frame exceeds 65535 pixels on
+ *   either side.
  */
 export function encodeAnimationGif(
   frames: Canvas[],
@@ -250,6 +272,7 @@ export function encodeAnimationGif(
   maxColors = 256,
 ): Uint8Array {
   if (scale !== undefined) assertScale('encodeAnimationGif', scale);
+  assertGifOptions('encodeAnimationGif', speed, maxColors);
   const first = frames[0];
   if (!first) throw new Error('encodeAnimationGif requires at least one frame');
   assertAnimationFrameDimensions(frames);
@@ -265,12 +288,11 @@ export function encodeAnimationGif(
   const gif = GIFEncoder();
 
   for (const frame of frames) {
-    const flat = frame.toRgbBuffer();
-    const rgb = scale === 1 ? flat : upscale(flat, frame.width, frame.height, scale, 3);
-    const rgba = rgbToRgba(rgb);
+    const rgba = rgbToRgba(frame.toRgbBuffer());
     const palette = quantize(rgba, maxColors);
     const index = applyPalette(rgba, palette);
-    gif.writeFrame(index, w, h, { palette, delay: speed });
+    const scaled = scale === 1 ? index : upscale(index, frame.width, frame.height, scale, 1);
+    gif.writeFrame(scaled, w, h, { palette, delay: speed });
   }
 
   gif.finish();
@@ -279,13 +301,14 @@ export function encodeAnimationGif(
 
 /**
  * Save animation frames as an animated GIF file.
- * @param speed - Delay between frames in milliseconds.
+ * @param speed - Delay between frames in milliseconds, 0 to 655350.
  * @param scale - Nearest-neighbor upscale factor, a positive integer (default:
  *   the largest from 1 to 8 that keeps the output within 4096 px per side — 8
  *   for any frame up to 512 px, so 64×64 frames save at 512×512).
- * @param maxColors - Max palette colors per frame (default: 256).
- * @throws {RangeError} When the scale is not a positive integer, or the scaled
- *   frame exceeds 65535 pixels on either side — nothing is written.
+ * @param maxColors - Max palette colors per frame, an integer from 1 to 256 (default: 256).
+ * @throws {RangeError} When the scale is not a positive integer, the speed or
+ *   maxColors is out of range, or the scaled frame exceeds 65535 pixels on
+ *   either side — nothing is written.
  */
 export async function saveAnimationGif(
   frames: Canvas[],
@@ -295,6 +318,7 @@ export async function saveAnimationGif(
   maxColors = 256,
 ): Promise<void> {
   if (scale !== undefined) assertScale('saveAnimationGif', scale);
+  assertGifOptions('saveAnimationGif', speed, maxColors);
   const gif = encodeAnimationGif(frames, speed, scale, maxColors);
   await writeFile(path, gif);
 }

@@ -304,6 +304,56 @@ describe('encodeAnimationGif', () => {
     });
   });
 
+  /** Digests of the upscale-then-quantize encoder this one replaced, computed independently. */
+  it.each([
+    [1, 'd669334579fd293b38b95001ddd77b8772a63ee9a887829e161c1ff9c384bb72'],
+    [2, '42f390097d8cdb4f07e1dd4ad3b4e37507077714c7a7a24c09e3d287eaf5b291'],
+    [8, '66714c01fd5a569aea4c80afc0f1e1a575f81aef3de627318eb12709bb8f8189'],
+  ] as const)(
+    'encodes the same bytes at scale %i as quantizing the upscaled frame',
+    (scale, hex) => {
+      const frames = [figureCanvas(), new Canvas(16).gradientH('blue', 'yellow')];
+      expect(sha256(encodeAnimationGif(frames, 100, scale))).toBe(hex);
+    },
+  );
+
+  it.each([
+    [0, 0],
+    [104, 10],
+    [655350, 0xffff],
+  ] as const)('stores a %i ms speed as %i centiseconds', (speed, centiseconds) => {
+    const gif = encodeAnimationGif([new Canvas(4)], speed, 1);
+    const gce = gif.findIndex((b, i) => b === 0x21 && gif[i + 1] === 0xf9 && gif[i + 2] === 4);
+    expect(gif[gce + 4]! | (gif[gce + 5]! << 8)).toBe(centiseconds);
+  });
+
+  it.each([-1, 655351, Number.NaN, Number.POSITIVE_INFINITY])('rejects speed %s', (speed) => {
+    expect(() => encodeAnimationGif([new Canvas(4)], speed, 1)).toThrow(
+      new RangeError(`encodeAnimationGif speed must be a delay from 0 to 655350 ms; got ${speed}`),
+    );
+  });
+
+  it.each([0, 257, 2.5, Number.NaN])('rejects maxColors %s', (maxColors) => {
+    expect(() => encodeAnimationGif([new Canvas(4)], 100, 1, maxColors)).toThrow(
+      new RangeError(
+        `encodeAnimationGif maxColors must be an integer from 1 to 256; got ${maxColors}`,
+      ),
+    );
+  });
+
+  it('rejects a bad speed or maxColors in saveAnimationGif without writing a file', async () => {
+    await withTempDir(async (directory) => {
+      const path = join(directory, 'animation.gif');
+      await expect(saveAnimationGif([new Canvas(4)], path, -10, 1)).rejects.toThrow(
+        'saveAnimationGif speed must be a delay from 0 to 655350 ms; got -10',
+      );
+      await expect(saveAnimationGif([new Canvas(4)], path, 100, 1, 300)).rejects.toThrow(
+        'saveAnimationGif maxColors must be an integer from 1 to 256; got 300',
+      );
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
   it('keeps the existing empty-frame error', () => {
     expect(() => encodeAnimationGif([], 100, 1)).toThrow(
       new Error('encodeAnimationGif requires at least one frame'),
