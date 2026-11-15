@@ -3,11 +3,21 @@ description: Suggest a new feature or improvement for @cyanheads/pixoo-toolkit
 labels: ["enhancement"]
 assignees: ["cyanheads"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **Secondary labels.** `enhancement` is applied automatically — also add one or more of the following in the sidebar if they apply:
+        - `performance` — improves memory, CPU, latency, or resource usage
+        - `security` — hardens the security posture
+        - `breaking-change` — will break public API
+        - `surplus-token-idea` — worth exploring when token budget allows
+
   - type: textarea
     id: use-case
     attributes:
       label: Use case
-      description: What problem does this solve, and who benefits?
+      description: What problem does this solve? Who benefits? Two or three sentences.
+      placeholder: "A clock face changes a few pixels a second, but there's no way to tell which pixels changed between two frames..."
     validations:
       required: true
 
@@ -15,27 +25,14 @@ body:
     id: proposed-api
     attributes:
       label: Proposed API
-      description: Show the consumer-facing TypeScript API or behavior when possible.
+      description: How would this look from a consumer's perspective? Include example code if possible.
       render: typescript
-    validations:
-      required: true
+      placeholder: |
+        import { Canvas } from '@cyanheads/pixoo-toolkit';
 
-  - type: dropdown
-    id: subsystem
-    attributes:
-      label: Subsystem
-      options:
-        - Canvas and drawing
-        - Color
-        - Bitmap fonts
-        - Image and sprites
-        - Animation
-        - PNG or GIF export
-        - SVG paths
-        - LED finishing
-        - PixooClient
-        - Packaging or developer experience
-        - New subsystem
+        const before = canvas.clone();
+        drawClock(canvas, new Date());
+        const changed = canvas.diff(before);
     validations:
       required: true
 
@@ -44,9 +41,13 @@ body:
     attributes:
       label: Alternatives considered
       description: What you tried or considered instead, and why it fell short.
+    validations:
+      required: false
 
   - type: textarea
     id: context
     attributes:
       label: Additional context
-      description: Related issues, prior art, links, or other relevant details.
+      description: Only what the reader needs to act — related issues, prior art, a link.
+    validations:
+      required: false

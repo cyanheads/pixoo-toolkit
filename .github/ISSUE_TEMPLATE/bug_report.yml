@@ -6,81 +6,35 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug in `@cyanheads/pixoo-toolkit`.
+        Thanks for reporting a bug. Drawing, font, image, and PNG/GIF bugs reproduce without a device — a repro that never calls `PixooClient` is the fastest to fix. If the display misbehaves the same way from the Divoom app, the cause is likely firmware rather than the toolkit.
 
-        **Do not include secrets, credentials, device identifiers, private IP addresses, or other sensitive data.** Replace local addresses with placeholders such as `<device-ip>` and redact logs before submitting. GitHub issues are public.
+        **Do not include secrets, device identifiers, private IP addresses, or other sensitive data.** Replace device addresses with `<device-ip>` or `192.0.2.1` and redact logs before submitting. GitHub issues are public and permanent.
 
-  - type: input
-    id: version
+        **Secondary labels.** `bug` is applied automatically — also add one or more of the following in the sidebar if they apply:
+        - `regression` — worked before, broken after an update
+        - `performance` — memory, CPU, latency, or resource usage
+        - `security` — vulnerability, CVE, or hardening work
+        - `breaking-change` — fix will break public API
+        - `surplus-token-idea` — worth exploring when token budget allows
+
+  - type: textarea
+    id: environment
     attributes:
-      label: Toolkit version
-      placeholder: "0.6.1"
+      label: Environment
+      description: "Replace the second row. pixoo-toolkit: the installed version, not the ^ range. Runtime: Bun, Node.js, or a browser bundle, with its version. Device: the Pixoo model, or none when no device is involved. OS is optional."
+      value: |
+        | pixoo-toolkit | Runtime | Device | OS |
+        |---|---|---|---|
+        | 0.x.y | Bun 1.4.x | Pixoo-64 | macOS 15.x |
     validations:
       required: true
-
-  - type: dropdown
-    id: runtime
-    attributes:
-      label: Runtime
-      options:
-        - Bun
-        - Node.js
-        - Browser or bundler
-        - Other
-    validations:
-      required: true
-
-  - type: input
-    id: runtime-version
-    attributes:
-      label: Runtime version
-      placeholder: "Bun 1.3.x / Node.js 22.x"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: subsystem
-    attributes:
-      label: Subsystem
-      options:
-        - Canvas and drawing
-        - Color
-        - Bitmap fonts
-        - Image and sprites
-        - Animation
-        - PNG or GIF export
-        - SVG paths
-        - LED finishing
-        - PixooClient
-        - Packaging or types
-        - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: device
-    attributes:
-      label: Device model
-      options:
-        - Not device-related
-        - Pixoo-16
-        - Pixoo-32
-        - Pixoo-64
-        - Other Divoom device
-    validations:
-      required: true
-
-  - type: input
-    id: os
-    attributes:
-      label: OS
-      placeholder: "macOS 15.x / Ubuntu 24.04 / Windows 11"
 
   - type: textarea
     id: description
     attributes:
       label: Description
-      description: What happened and what you expected instead.
+      description: What happened and what you expected instead — two or three sentences.
+      placeholder: "drawText clips the last glyph of a string that measureText says fits the row."
     validations:
       required: true
 
@@ -88,8 +42,16 @@ body:
     id: reproduction
     attributes:
       label: Reproduction
-      description: Minimal code that reproduces the issue without private device or network details.
+      description: Minimal code to reproduce the issue, without private device or network details.
       render: typescript
+      placeholder: |
+        import { Canvas, drawText, measureText } from '@cyanheads/pixoo-toolkit';
+
+        const canvas = new Canvas(64);
+        const text = 'HELLO WORLD';
+        console.log(measureText(text));
+        drawText(canvas, text, 0, 0, '#ffffff');
+        console.log(canvas.getPixel(63, 3));
     validations:
       required: true
 
@@ -106,6 +68,7 @@ body:
     id: expected
     attributes:
       label: Expected behavior
+      description: What should have happened.
     validations:
       required: true
 
@@ -113,4 +76,6 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Firmware version, workarounds, related issues, or other relevant details.
+      description: Only what changes the fix — firmware version, a workaround, a related issue, the one log line that matters.
+    validations:
+      required: false
