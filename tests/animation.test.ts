@@ -32,10 +32,14 @@ describe('Animation construction', () => {
     expect(anim.frame(1).getPixel(0, 0)).toEqual([0, 0, 0]);
   });
 
-  it('throws RangeError for frameCount <= 0', () => {
-    expect(() => new Animation(0)).toThrow(RangeError);
-    expect(() => new Animation(-1)).toThrow(RangeError);
-  });
+  it.each([0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'throws RangeError for frameCount %s',
+    (frameCount) => {
+      expect(() => new Animation(frameCount)).toThrow(
+        new RangeError(`Animation frameCount must be a positive integer; got ${frameCount}`),
+      );
+    },
+  );
 });
 
 describe('Animation.frame', () => {

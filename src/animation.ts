@@ -25,13 +25,17 @@ export class Animation {
   readonly size: PixooSize | undefined;
 
   /**
-   * @param frameCount - Number of frames to pre-allocate. The device becomes
-   *   unstable above ~40 frames — keep sequences at or below that.
+   * @param frameCount - Number of frames to pre-allocate, a positive integer.
+   *   The device becomes unstable above ~40 frames — keep sequences at or
+   *   below that.
    * @param speed - Milliseconds per frame (default: 100).
    * @param size - Canvas size per frame (default: 64).
+   * @throws {RangeError} When `frameCount` is not a positive integer.
    */
   constructor(frameCount: number, speed = 100, size?: PixooSize) {
-    if (frameCount <= 0) throw new RangeError('frameCount must be positive');
+    if (!Number.isInteger(frameCount) || frameCount < 1) {
+      throw new RangeError(`Animation frameCount must be a positive integer; got ${frameCount}`);
+    }
     this.frames = Array.from({ length: frameCount }, () => new Canvas(size));
     this.speed = speed;
     this.size = size;
