@@ -27,12 +27,12 @@ Full programmatic control of Divoom Pixoo displays from TypeScript — bypassing
 | **Canvas** | RGBA pixel buffer at a panel size (16/32/64) or any width × height up to 4096 for layers and strips — alpha-aware compositing with `normal`, `add`, `screen`, and `multiply` blend modes, pixel access, rects, circles, lines, triangles, translucent fills and strokes, stroke widths, anti-aliased lines and circles, 3 gradient modes, clone, scrolling; exports flatten to device RGB |
 | **Bitmap Fonts** | Two built-in text sizes (5×7 and 3×5 compact with lowercase), each covering printable ASCII plus `° ← ↑ → ↓ ▲ ▼ ♥ · …`, with tight proportional metrics; 11×18 numerals on one advance for clocks and readouts; BDF font loading with per-glyph offsets and advances; measurement and centered rendering |
 | **Color System** | RGB/HSL types, 30+ named colors, interpolation, hex parsing — strict resolution (typos throw, `tryResolveColor` to probe) |
-| **Device Client** | Full Pixoo HTTP API — frames, animations, GIF playback from a URL, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success. Pushed canvases must match the configured display size, and `minPushInterval` spaces frames to respect the firmware's push limit |
+| **Device Client** | Full Pixoo HTTP API — frames, animations, GIF playback from a URL, channels, brightness, screen on/off, clock faces, text overlays, scoreboard, timer, stopwatch, noise meter, buzzer, batch commands, LAN discovery. Every call returns a discriminated `PixooResult` — failures can't be mistaken for success. Pushed canvases must match the configured display size, pushes take turns and cancel through an `AbortSignal`, and `minPushInterval` spaces frames to respect the firmware's push limit |
 | **Image Loading** | Alpha-preserving resize to canvas via sharp from a file path or in-memory bytes, always from the full-resolution decode, so the default nearest-neighbor kernel keeps pixel art crisp in every format; animated GIF and WebP decoded to frames with their delays; sprite downsampling with color classification |
 | **LED Finishing** | Exact area downsampling in linear light that never rings on hard edges; palette reduction by variance split or to your own colors, with Bayer 4×4 or Floyd–Steinberg dithering; correction for a panel's measured drive-to-light response, and a preview of what the panel shows. Runs in the browser through `/core` |
 | **Animation Builder** | Multi-frame sequences with per-frame render callbacks |
 | **SVG Paths** | Parse SVG `d` attributes (lines + sampled Bézier curves and elliptical arcs) and rasterize with even-odd scanline fill — multi-subpath holes — or as 1-pixel strokes, for the `fill="none"` outline icons most icon sets ship |
-| **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling at any positive integer scale (by default 8, lowered so a large canvas stays within 4096 px per side). PNG defaults to alpha flattened over black — what the panel shows — with `{ alpha: true }` to keep the alpha channel instead |
+| **PNG & GIF Export** | Zero-dependency PNG encoder (using `node:zlib`), animated GIF encoder (via gifenc), nearest-neighbor upscaling at any positive integer scale (saved files and GIFs default to 8, lowered so a large canvas stays within 4096 px per side; `canvasToPng` defaults to 1). PNG defaults to alpha flattened over black — what the panel shows — with `{ alpha: true }` to keep the alpha channel instead |
 
 ## Getting Started
 
@@ -227,7 +227,7 @@ canvas.drawLine(0, 0, 63, 40, 'cyan', { width: 3, antialias: true });
 canvas.drawCircle(32, 32, 20, 'gold', { width: 2, antialias: true, alpha: 0.6 });
 ```
 
-`alpha` is 0–1 opacity on `blendPixel`'s scale, not `setPixel`'s 0–255 byte, and each pixel is composited once. `drawRect` grows its width inward, inside the region `fillRect` fills; `drawLine` and `drawCircle` center it on the path. Anti-aliasing shades each edge pixel by how much of it the stroke covers, from the exact coordinates; without it, a line floors its endpoints as the 1px line does, and a circle keeps its exact center. The 1px `drawCircle` ring lies on the `fillCircle` disc of the same center and radius. Omitting the options draws exactly what the 1px, opaque calls always have.
+`alpha` is 0–1 opacity on `blendPixel`'s scale, not `setPixel`'s 0–255 byte, and each pixel is composited once. `drawRect` grows its width inward, inside the region `fillRect` fills; `drawLine` and `drawCircle` center it on the path. Anti-aliasing shades each edge pixel by how much of it the stroke covers, from the exact coordinates; without it, a line floors its endpoints as the 1px line does, and a circle keeps its exact center. The 1px `drawCircle` ring is the edge of the `fillCircle` disc of the same center and radius, so an outline drawn over a fill leaves no fill pixel outside it. Omitting the options draws exactly what the 1px, opaque calls always have.
 
 ### SVG Paths
 
@@ -245,7 +245,7 @@ renderSvgPath(canvas, filledIcon, 'cyan', [24, 24], [8, 8, 24, 24]);
 renderSvgPath(canvas, outlineIcon, 'cyan', [24, 24], [32, 8, 24, 24], { mode: 'stroke' });
 ```
 
-Fill is the default. Reach for `{ mode: 'stroke' }` when the source path is `fill="none" stroke="..."` — the outline style Lucide, Feather, and Heroicons outline ship — since filling one of those paints the region the outline encloses rather than the outline itself. Stroke is 1 pixel wide; `stroke-width`, joins, caps, and dashes are not interpreted.
+Fill is the default, and paints each pixel whose center lies inside the path, so a path along pixel edges fills exactly the block `fillRect` would, and two paths sharing an edge never both paint it. Reach for `{ mode: 'stroke' }` when the source path is `fill="none" stroke="..."` — the outline style Lucide, Feather, and Heroicons outline ship — since filling one of those paints the region the outline encloses rather than the outline itself. Stroke is 1 pixel wide; `stroke-width`, joins, caps, and dashes are not interpreted.
 
 ### Browsers and Bundlers
 
@@ -286,9 +286,11 @@ output/           Generated PNG previews (gitignored)
 
 All commands go to `POST http://<device-ip>/post` with a JSON body containing a `Command` field. The `PixooClient` class wraps this — use `client.send(command, params)` for raw access, or the typed convenience methods.
 
-For raw calls, the positional `command` is authoritative if `params` also contains a top-level `Command`; other parameters, including nested `CommandList` entries, are preserved. The client retries network failures, abort-driven timeouts, and HTTP 408, 429, 500, 502, 503, and 504 with exponential backoff. Other HTTP failures and device rejections return immediately; `retries: 0` makes one attempt.
+For raw calls, the positional `command` is authoritative if `params` also contains a top-level `Command`; other parameters, including nested `CommandList` entries, are preserved. The client retries network failures, abort-driven timeouts, and HTTP 408, 429, 500, 502, 503, and 504 with exponential backoff. Other HTTP failures, replies that aren't the API's JSON, and device rejections return immediately; `retries: 0` makes one attempt.
 
-Every call returns a `PixooResult`: `{ ok: true, data }` or `{ ok: false, kind, message }` where `kind` is `'network' | 'timeout' | 'http' | 'device'` — narrow on `ok` to reach the data, or use `unwrap()` to throw on failure.
+Every call returns a `PixooResult`: `{ ok: true, data }` or `{ ok: false, kind, message }` where `kind` is `'network' | 'timeout' | 'http' | 'device' | 'response'` — narrow on `ok` to reach the data, or use `unwrap()` to throw on failure. `'response'` means a reply came back that isn't the Pixoo's JSON envelope with a numeric `error_code`, which usually means another HTTP server answers at that address.
+
+The constructor throws `RangeError` for a `size` other than 16, 32, or 64, a `timeout` that isn't a positive number, `retries` that isn't a non-negative integer, or a negative or non-finite `retryDelay` or `minPushInterval`.
 
 `size` tells the client which panel it is talking to. `push()` and `pushAnimation()` throw `RangeError` for a canvas that doesn't match it, before any request goes out — the device would render a mismatched frame garbled or not at all, and that failure is invisible from the calling side. A `PixooResult` is reserved for what the device and network do; a canvas sized wrong at construction is a coding error.
 
@@ -301,6 +303,12 @@ const device = new PixooClient(process.env.PIXOO_IP!, { size: 64, minPushInterva
 ```
 
 It is off by default. The interval covers the `Draw/SendHttpGif` frames only, measured from when each send starts; the `Draw/ResetHttpGifId` that precedes a push and every non-drawing command go out unthrottled.
+
+`push()`, `pushAnimation()`, and `playGifUrl()` take turns: one called while another is still sending waits for it, so two animations never interleave their frames. Each reads its canvases when called, so you can redraw them while it waits. `send()`, `resetGifId()`, and the three pushes take `{ signal }` as their last argument. Once the signal aborts, the call sends nothing further (no retry, no next frame, no queued push) and rejects with the signal's reason instead of returning a `PixooResult`:
+
+```typescript
+const res = await device.pushAnimation(frames, 80, { signal: AbortSignal.timeout(30_000) });
+```
 
 ```typescript
 import { PixooClient, Channel, unwrap } from '@cyanheads/pixoo-toolkit';
@@ -326,7 +334,7 @@ const res = await device.playGifUrl('http://192.0.2.10:8765/loop.gif');
 if (!res.ok) console.error(`${res.kind}: ${res.message}`);
 ```
 
-`ok: true` means the device accepted the command, not that the GIF played: it replies before downloading, and reports success for a 404, an unreachable host, or a file that isn't a GIF. Serve a 16×16, 32×32, or 64×64 GIF — any other size reboots the device once it downloads. A URL over 255 bytes (UTF-8) throws `RangeError` without sending a request — the device gives no reply to one and reboots. `minPushInterval` doesn't apply; a play is one command.
+`ok: true` means the device accepted the command, not that the GIF played: it replies before downloading, and reports success for a 404, an unreachable host, or a file that isn't a GIF. Serve a 16×16, 32×32, or 64×64 GIF — any other size reboots the device once it downloads. `encodeAnimationGif(frames, speed, 1)` writes one at the panel's size; its default scale of 8 does not. A URL over 255 bytes (UTF-8) throws `RangeError` without sending a request — the device gives no reply to one and reboots. A play waits its turn behind a push still sending, but `minPushInterval` doesn't hold it back; a play is one command.
 
 ## License
 

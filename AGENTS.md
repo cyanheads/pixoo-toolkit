@@ -128,12 +128,12 @@ The device downloads the GIF and loops it — one command in place of a `Draw/Se
 **Limits & quirks** (measured on a Pixoo-64 whose API reports no firmware version):
 - The device replies `error_code: 0` before it downloads, and still returns 0 for a 404, a refused connection, a server that never responds, or a file that is not a GIF — `ok: true` means the command was accepted, nothing more
 - A `FileName` longer than 255 bytes gets no reply, and the device reboots. `playGifUrl()` throws `RangeError` for a URL over 255 bytes (UTF-8) instead of sending it
-- 16×16, 32×32 and 64×64 GIFs download without fault; 48×48, 64×32 and 128×128 each rebooted the device after downloading
+- 16×16, 32×32 and 64×64 GIFs download without fault; 48×48, 64×32 and 128×128 each rebooted the device after downloading. `encodeAnimationGif(frames, speed, 1)` writes the panel's size; its default scale of 8 does not
 - No frame or size ceiling up to 800 frames or 4 MB (the largest tested): each downloaded completely and the device stayed responsive
 - `https` works, and a self-signed certificate is accepted — the device does not validate certificates
 - A response that has not started within ~5 s is abandoned; a stalled download does not block other commands
 - Each play fetches the file once; `Channel/GetIndex` and `Draw/GetHttpGifId` do not change, and a later `push()` is accepted
-- `minPushInterval` does not apply — a play is one command, not a frame
+- `minPushInterval` does not apply — a play is one command, not a frame — but `playGifUrl()` still waits its turn behind a push that is sending
 
 #### Tools
 
@@ -222,13 +222,13 @@ scripts/        Reusable display scripts plus shared env config and tooling (env
 output/         Generated PNG previews — do not commit
 src/
   canvas.ts     RGBA pixel buffer (panel sizes 16/32/64, or any width × height 1–4096 via new Canvas(w, h) / Canvas.fromRgba) + drawing primitives with alpha, stroke width, and anti-aliased lines and circles; blit blend modes (normal/add/screen/multiply); exports flatten to device RGB
-  client.ts     PixooClient — HTTP device control, PixooResult on every call, size-matched pushes, optional frame throttle, GIF playback from a URL, LAN discovery
+  client.ts     PixooClient — HTTP device control, PixooResult on every call, size-matched pushes that take turns, AbortSignal cancellation, optional frame throttle, GIF playback from a URL, LAN discovery
   color.ts      RGB/HSL types, named colors, lerp, dim; strict resolveColor / tryResolveColor
   font.ts       Bitmap fonts (FONT_5x7 and FONT_3x5: printable ASCII plus ° ← ↑ → ↓ ▲ ▼ ♥ · …; FONT_DIGITS_11x18 numerals), optional per-glyph GlyphMetrics, parseBdf (BDF text → BitmapFont), code-point drawText / measureText
   image.ts      Image loading from a path or bytes (sharp, alpha-preserving), animated GIF/WebP frames via loadAnimation, sprite downsampling + rendering
   animation.ts  Multi-frame animation builder
   preview.ts    Zero-dep PNG encoder, savePng() with opt-in RGBA; animated GIF export via gifenc
-  svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer, 1px stroke mode for outline paths
+  svg-path.ts   SVG path parser (sampled Béziers) + even-odd subpath rasterizer sampling pixel centers, 1px stroke mode for outline paths
   finish.ts     LED finishing — downsample (exact area average in linear light), quantize (variance-split palette or a given one; none/bayer4/floyd-steinberg dither), correctForPanel / simulatePanel (map through a measured [drive, light] response)
   gifenc.d.ts   Local type declarations for gifenc (ships none)
   core.ts       Browser-safe entry, published as ./core — re-exports canvas, color, font, svg-path, animation, finish
@@ -320,6 +320,9 @@ Each reads `PIXOO_IP` and `PIXOO_SIZE` through `deviceFromEnv()` in `scripts/env
 - Rate-limit pushes to ~1/second to avoid the ~300-push freeze bug — `new PixooClient(ip, { minPushInterval: 1000 })` enforces it
 - A pushed canvas must match the client's configured `size`; a mismatch throws `RangeError` instead of sending a frame the panel can't render
 - A `PixooClient` method taking a number throws `RangeError` naming the method and parameter for `NaN` or `±Infinity` before any request — `JSON.stringify` would send it as `null`. `setBrightness()` alone clamps `±Infinity`
+- `push()`, `pushAnimation()`, and `playGifUrl()` run one at a time through `PixooClient`'s display queue (`takeTurn`), so two pushes never interleave frames or PicIDs and `minPushInterval` spaces every frame. A call's `signal` stops it sending anything further and rejects with the signal's reason; it never becomes a `PixooResult`
+- `PixooResult` kind `'response'` is a reply that is not the API's JSON envelope with a numeric `error_code` — another server at that address. It is not retried
+- The 1px `drawCircle` ring is the edge of the `fillCircle` disc of the same center and radius; change one and the other follows (`tests/canvas.test.ts` checks it for radii 0–64)
 - Canvas, font, and SVG path functions reject non-finite geometry and options with a `RangeError` that names the function the caller invoked, never a delegate, checked before the color resolves and before anything is drawn
 - `canvas`, `color`, `font`, `svg-path`, `animation`, and `finish` stay free of Node built-ins, packages, and Node globals (`Buffer`, `process`, `require`) — `src/core.ts` publishes them as the browser entry, and `tests/packaging.test.ts` bundles it with `bun build --target=browser` to enforce that
 - The package ships `src/` beside `dist/src` so every published `.js.map` and `.d.ts.map` resolves; keep `files` covering both while `tsconfig.json` emits maps
