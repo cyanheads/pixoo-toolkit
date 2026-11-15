@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **canvas:** `fillCircle()` at an integer radius about an integer center no longer leaves a fill pixel outside the `drawCircle()` ring of the same center and radius (#66).
-- **canvas:** `fillTriangle()` with a flat bottom edge now draws its bottom row.
+- **canvas:** `fillTriangle()` draws the bottom row of a triangle whose flat bottom edge lies on a whole-pixel row, which it dropped.
 - **canvas:** `blit()` of a canvas onto itself reads the pixels as they were before the call.
 - **preview:** `encodeAnimationGif()` quantizes each frame at source resolution before upscaling, so the palette is no longer built from the enlarged copy.
 - **client:** a reply that is not JSON, or has no numeric `error_code`, returns a `'response'` failure where it came back as a `'network'` or `'device'` failure.
