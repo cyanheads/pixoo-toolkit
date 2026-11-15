@@ -197,11 +197,11 @@ function lineMinorAt(p: number, a0: number, b0: number, a1: number, b1: number):
 /**
  * The `fillCircle` footprint of a circle of radius `radius` (0 or more) about
  * (cx, cy): every pixel whose offset (dx, dy) from the center meets
- * dx² + dy² ≤ r² + r. `bound` is r² + r. At an integer radius about an integer
- * center the midpoint circle of that radius lies inside it; the bound rises
- * with the radius, so each footprint contains every smaller one. It reaches
- * under r + ½ from the center, so the pixels from ⌊c − r⌋ to ⌈c + r⌉ on each
- * axis hold all of it.
+ * dx² + dy² ≤ r² + r. `bound` is r² + r. The bound rises with the radius, so
+ * each footprint contains every smaller one. It reaches under r + ½ from the
+ * center, so the pixels from ⌊c − r⌋ to ⌈c + r⌉ on each axis hold all of it.
+ * `fillCircle` fills it as is about a fractional center; about an integer
+ * center, `integerDiscRun` clips it to the midpoint disc.
  */
 function circleFootprint(
   cx: number,
@@ -263,37 +263,77 @@ function isqrtBig(n: bigint): bigint {
 }
 
 /**
- * Where the midpoint circle of an integer radius crosses one row (or column):
- * given the line and the center's coordinates along and across it, the two
- * pixels the ring's x-major (or y-major) octants put on that line, or
- * undefined when the line holds none of them.
- *
- * `k` lines from the center the ring sits `a` pixels out on either side, `a`
- * being the largest integer up to the radius with a(a − 1) + k² ≤ r² — the
- * pixel the midpoint loop settles on — and the octant holds it while a ≥ k.
- * Past a radius of 2²⁵, r² is no longer exact in a double, so the arithmetic
- * switches to bigint. Callers pass only lines within the radius of the center.
+ * A disc about an integer center, read one row (or column) at a time: given
+ * the line and the center's coordinates along and across it, the first and
+ * last pixel of the disc on that line, or undefined when the line misses it.
+ * Each disc it describes is symmetric across both axes and both diagonals and
+ * holds every pixel between its two ends on a line, so the ends of its rows
+ * and columns are its edge.
  */
-function midpointCrossing(
-  radius: number,
-): (line: number, lineCenter: number, runCenter: number) => readonly [number, number] | undefined {
+type DiscRun = (
+  line: number,
+  lineCenter: number,
+  runCenter: number,
+) => readonly [number, number] | undefined;
+
+/**
+ * The midpoint disc of an integer radius: every pixel whose offsets m ≥ n
+ * (the larger and smaller of |dx| and |dy|) meet m ≤ r and m(m − 1) + n² ≤ r²
+ * — exactly what the midpoint circle of that radius encloses, the circle
+ * itself included.
+ *
+ * `k` lines from the center the run reaches `a` pixels out on either side, `a`
+ * being the largest integer up to the radius with a(a − 1) + k² ≤ r² — the
+ * pixel the midpoint loop settles on — while a ≥ k, and isqrt(r² − k² + k)
+ * past that. Past a radius of 2²⁵, r² is no longer exact in a double, so the
+ * arithmetic switches to bigint.
+ */
+function midpointRun(radius: number): DiscRun {
   if (radius <= MAX_EXACT_MIDPOINT_RADIUS) {
     const r2 = radius * radius;
     return (line, lineCenter, runCenter) => {
       const k = Math.abs(line - lineCenter);
+      if (k > radius) return undefined;
       // The cap binds only at radius 0, where a = 1 also satisfies a(a − 1) ≤ 0
       const a = Math.min(radius, Math.floor((isqrt(4 * (r2 - k * k) + 1) + 1) / 2));
-      return a < k ? undefined : [runCenter - a, runCenter + a];
+      const half = a >= k ? a : isqrt(r2 - k * k + k);
+      return [runCenter - half, runCenter + half];
     };
   }
-  const r2 = BigInt(radius) ** 2n;
+  const r = BigInt(radius);
+  const r2 = r * r;
   return (line, lineCenter, runCenter) => {
     const offset = BigInt(line) - BigInt(lineCenter);
     const k = offset < 0n ? -offset : offset;
+    if (k > r) return undefined;
     const a = (isqrtBig(4n * (r2 - k * k) + 1n) + 1n) >> 1n;
-    if (a < k) return undefined;
+    const half = a >= k ? a : isqrtBig(r2 - k * k + k);
     const center = BigInt(runCenter);
-    return [Number(center - a), Number(center + a)];
+    return [Number(center - half), Number(center + half)];
+  };
+}
+
+/**
+ * The `fillCircle` disc about an integer center: the `circleFootprint`
+ * pixels that also lie in the midpoint disc of ⌈r⌉. At an integer radius
+ * that is the midpoint disc itself, which the footprint contains, so the
+ * 1px midpoint ring is its edge; between integer radii the clip only trims
+ * pixels the next integer radius would leave outside its ring, so each disc
+ * still contains every smaller one.
+ */
+function integerDiscRun(radius: number): DiscRun {
+  const midpoint = midpointRun(Math.ceil(radius));
+  if (Number.isInteger(radius)) return midpoint;
+  const bound = radius * radius + radius;
+  return (line, lineCenter, runCenter) => {
+    const ends = midpoint(line, lineCenter, runCenter);
+    const d = line - lineCenter;
+    if (ends === undefined || d * d > bound) return undefined;
+    // The footprint's half-run: the largest h with h² + d² ≤ bound
+    let half = Math.floor(Math.sqrt(bound - d * d));
+    if ((half + 1) * (half + 1) + d * d <= bound) half++;
+    else if (half * half + d * d > bound) half--;
+    return [Math.max(ends[0], runCenter - half), Math.min(ends[1], runCenter + half)];
   };
 }
 
@@ -505,11 +545,15 @@ export class Canvas {
   /**
    * Fill a circle (solid) — opaque, or composited once per pixel at
    * `opts.alpha`. The disc is every pixel whose offset (dx, dy) from the
-   * center meets dx² + dy² ≤ r² + r, at any radius. At an integer radius
-   * about an integer center it has no one-pixel nub at the ends of its axes.
-   * The 1px `drawCircle` ring of the same center and radius lies inside it,
-   * whatever the center and radius. The disc grows with the radius, each one
-   * containing every smaller one. A negative radius draws nothing.
+   * center meets dx² + dy² ≤ r² + r. About an integer center it is clipped to
+   * the midpoint disc of ⌈r⌉ — the pixels with m ≤ ⌈r⌉ and m(m − 1) + n² ≤
+   * ⌈r⌉², m and n the larger and smaller of |dx| and |dy| — so at an integer
+   * radius it is exactly what the midpoint ring encloses, with no one-pixel
+   * nub at the ends of its axes. The 1px `drawCircle` ring of the same center
+   * and radius is its edge, whatever the center and radius, so an outline
+   * drawn over the fill leaves no fill pixel outside it. The disc grows with
+   * the radius, each one containing every smaller one. A negative radius
+   * draws nothing.
    * @throws {RangeError} When the center or radius is not finite, or `alpha`
    *   is not a number from 0 to 1 — before the color resolves.
    */
@@ -518,6 +562,20 @@ export class Canvas {
     const alpha = optionAlpha('fillCircle', opts);
     const c = resolveColor(color);
     if (radius < 0 || alpha === 0) return this;
+    if (Number.isInteger(cx) && Number.isInteger(cy)) {
+      const run = integerDiscRun(radius);
+      const reach = Math.ceil(radius);
+      const last = Math.min(this.height - 1, cy + reach);
+      for (let py = Math.max(0, cy - reach); py <= last; py++) {
+        const ends = run(py, cy, cx);
+        if (ends === undefined) continue;
+        const xLast = Math.min(this.width - 1, ends[1]);
+        for (let px = Math.max(0, ends[0]); px <= xLast; px++) {
+          this.composite(this.idx(px, py), c, alpha);
+        }
+      }
+      return this;
+    }
     const { inside } = circleFootprint(cx, cy, radius);
     const x0 = Math.max(0, Math.floor(cx - radius));
     const y0 = Math.max(0, Math.floor(cy - radius));
@@ -584,12 +642,11 @@ export class Canvas {
 
   /**
    * Draw a circle outline. With the default `width` of 1 and no
-   * `antialias`, an integer center and radius draw the midpoint (Bresenham)
-   * circle, which lies inside the `fillCircle` disc of that center and
-   * radius. Any other center or radius draws the edge of the `fillCircle`
-   * footprint (dx² + dy² ≤ r² + r) about the exact center — the footprint
-   * pixels with a horizontal or vertical neighbour outside it — so the ring
-   * is symmetric about its center and stays on the fill.
+   * `antialias`, it is the edge of the `fillCircle` disc of the same center
+   * and radius — the disc pixels with a horizontal or vertical neighbour
+   * outside it — so the ring is symmetric about its center, and a fill drawn
+   * under it has no pixel outside it. An integer center and radius draw the
+   * midpoint (Bresenham) circle, which is that edge.
    *
    * A wider or anti-aliased ring covers the band `r − width/2 ≤ d < r +
    * width/2`, `d` a pixel center's distance from the circle's exact center.
@@ -621,8 +678,8 @@ export class Canvas {
     const plot = (x: number, y: number) => {
       if (this.inBounds(x, y)) ring.add(this.idx(x, y));
     };
-    if (Number.isInteger(radius) && Number.isInteger(cx) && Number.isInteger(cy)) {
-      this.strokeMidpointCircle(cx, cy, radius, plot);
+    if (Number.isInteger(cx) && Number.isInteger(cy)) {
+      this.strokeDiscEdge(cx, cy, radius, plot);
     } else {
       this.strokeFootprintEdge(cx, cy, radius, plot);
     }
@@ -631,28 +688,28 @@ export class Canvas {
   }
 
   /**
-   * The midpoint circle of an integer radius about an integer center: each
-   * row within the radius carries the ring's x-major pixels, each column its
-   * y-major ones — the pixels the circumference walk of Bresenham's loop
-   * visits, found without the walk. The two passes share the octant-boundary
-   * pixels, so `plot` sees those twice.
+   * The edge of the `fillCircle` disc about an integer center: the two ends of
+   * each of its rows and columns. At an integer radius these are the pixels
+   * the circumference walk of Bresenham's midpoint loop visits, found without
+   * the walk. A pixel ending both a row and a column reaches `plot` twice.
    */
-  private strokeMidpointCircle(
+  private strokeDiscEdge(
     cx: number,
     cy: number,
     radius: number,
     plot: (x: number, y: number) => void,
   ): void {
-    const crossing = midpointCrossing(radius);
+    const run = integerDiscRun(radius);
+    const reach = Math.ceil(radius);
     const trace = (
       lines: number,
       lineCenter: number,
       runCenter: number,
       paint: (line: number, at: number) => void,
     ) => {
-      const last = Math.min(lines - 1, lineCenter + radius);
-      for (let line = Math.max(0, lineCenter - radius); line <= last; line++) {
-        const ends = crossing(line, lineCenter, runCenter);
+      const last = Math.min(lines - 1, lineCenter + reach);
+      for (let line = Math.max(0, lineCenter - reach); line <= last; line++) {
+        const ends = run(line, lineCenter, runCenter);
         if (ends === undefined) continue;
         paint(line, ends[0]);
         paint(line, ends[1]);
@@ -663,11 +720,11 @@ export class Canvas {
   }
 
   /**
-   * The edge of the `fillCircle` footprint: every row and column of the
-   * footprint is one run, whose edge pixels are its two ends. Each end is
-   * sought within a pixel of the analytic crossing and confirmed with
-   * `fillCircle`'s own inside test. A pixel ending both a row and a column
-   * reaches `plot` twice.
+   * The edge of the `fillCircle` footprint about a fractional center: every
+   * row and column of the footprint is one run, whose edge pixels are its two
+   * ends. Each end is sought within a pixel of the analytic crossing and
+   * confirmed with `fillCircle`'s own inside test. A pixel ending both a row
+   * and a column reaches `plot` twice.
    */
   private strokeFootprintEdge(
     cx: number,
@@ -1073,13 +1130,16 @@ export class Canvas {
     const lerp = (y: number, ya: number, xa: number, yb: number, xb: number) =>
       ya === yb ? xa : xa + ((y - ya) / (yb - ya)) * (xb - xa);
 
-    // Upper half: ay -> by. Ends on the last row strictly above `by`, which
-    // meets the lower half's `Math.ceil(by)` start with neither a gap nor an
-    // overlap for a fractional middle vertex as well as an integer one.
+    /**
+     * Upper half: ay -> by. Ends on the last row strictly above `by`, which
+     * meets the lower half's `Math.ceil(by)` start with neither a gap nor an
+     * overlap for a fractional middle vertex as well as an integer one. With a
+     * flat bottom (`by === cy`) there is no lower half, so it runs through `by`.
+     */
     if (by > ay) {
       scanline(
         ay,
-        Math.ceil(by) - 1,
+        cy > by ? Math.ceil(by) - 1 : by,
         (y) => {
           const e1 = lerp(y, ay, ax, by, bx);
           const e2 = lerp(y, ay, ax, cy, cx);
@@ -1138,7 +1198,8 @@ export class Canvas {
    * per `BlendMode` — on straight alpha, rounded once to bytes. Undrawn
    * (fully transparent) source pixels leave the destination untouched in
    * every mode; drawn pixels — including true black — land. Offsets are
-   * floored to integer pixel coordinates, as in `scroll()`.
+   * floored to integer pixel coordinates, as in `scroll()`. A canvas blitted
+   * onto itself reads its pixels as they were before the call.
    * @throws {RangeError} When either offset is not finite, or `mode` is not
    *   a `BlendMode` — before anything is drawn.
    */
@@ -1151,7 +1212,8 @@ export class Canvas {
     const ox = Math.floor(dx);
     const oy = Math.floor(dy);
     const key = opts?.transparentColor ?? null;
-    const src = source.buffer;
+    // A self-blit reads a snapshot, or the rows it writes feed later reads
+    const src = source === this ? this.buffer.slice() : source.buffer;
     // Clamp iteration to the overlapping region
     const syStart = Math.max(0, -oy);
     const syEnd = Math.min(source.height, this.height - oy);

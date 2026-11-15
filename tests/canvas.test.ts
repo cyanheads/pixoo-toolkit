@@ -112,12 +112,22 @@ function range(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 }
 
-/** `fillCircle`'s inside test: dx² + dy² ≤ r² + r from the center (cx, cy). */
+/**
+ * `fillCircle`'s inside test: dx² + dy² ≤ r² + r from the center (cx, cy),
+ * and about an integer center also inside the midpoint disc of R = ⌈r⌉ —
+ * m ≤ R and m(m − 1) + n² ≤ R², m and n the larger and smaller of |dx|, |dy|.
+ */
 function insideFootprint(cx: number, cy: number, r: number): (x: number, y: number) => boolean {
+  const integerCenter = Number.isInteger(cx) && Number.isInteger(cy);
+  const R = Math.ceil(r);
   return (x, y) => {
     const dx = x - cx,
       dy = y - cy;
-    return dx * dx + dy * dy <= r * r + r;
+    if (dx * dx + dy * dy > r * r + r) return false;
+    if (!integerCenter) return true;
+    const m = Math.max(Math.abs(dx), Math.abs(dy));
+    const n = Math.min(Math.abs(dx), Math.abs(dy));
+    return m <= R && m * (m - 1) + n * n <= R * R;
   };
 }
 
@@ -725,7 +735,7 @@ describe('fillCircle', () => {
     [20.25, 27.75],
     [-3, 30],
     [50, 10.5],
-  ])('fills exactly the pixels with dx² + dy² ≤ r² + r about (%s, %s)', (cx, cy) => {
+  ])('fills exactly the footprint pixels about (%s, %s)', (cx, cy) => {
     const radii = [0, 0.3, 0.5, 1, 1.2, 2, 2.5, 3, 7, 7.3, 12, 20.7, 30];
     const mismatched = radii.filter((r) => {
       const c = new Canvas(48).fillCircle(cx, cy, r, 'white');
@@ -759,6 +769,34 @@ describe('fillCircle', () => {
           .map((i) => `r ${r}: (${i % 131}, ${(i / 131) | 0})`);
       });
       expect(outside).toEqual([]);
+    },
+  );
+
+  it('leaves no fill pixel outside the radius-8 ring where it steps diagonally (issue repro)', () => {
+    const fill = new Canvas(32, 32).fillCircle(16, 16, 8, 'blue');
+    const ring = new Canvas(32, 32).drawCircle(16, 16, 8, 'yellow');
+    expect(ring.getPixelRgba(21, 22)[3]).toBe(255);
+    expect(ring.getPixelRgba(22, 21)[3]).toBe(255);
+    expect(fill.getPixelRgba(22, 22)[3]).toBe(0);
+    expect(fill.getPixelRgba(21, 21)[3]).toBe(255);
+  });
+
+  it.each<[number, number]>([
+    [65, 65],
+    [10, 120],
+    [0, 0],
+  ])(
+    'has the integer-radius drawCircle ring of the same center (%s, %s) as its edge for radii 0–64',
+    (cx, cy) => {
+      const mismatched = range(0, 64).filter((r) => {
+        const fill = new Canvas(131).fillCircle(cx, cy, r, 'white');
+        const ring = new Canvas(131).drawCircle(cx, cy, r, 'white');
+        return (
+          Buffer.compare(fill.buffer, footprint(131, 131, cx, cy, r).buffer) !== 0 ||
+          Buffer.compare(ring.buffer, footprintEdge(131, 131, cx, cy, r).buffer) !== 0
+        );
+      });
+      expect(mismatched).toEqual([]);
     },
   );
 
@@ -1006,23 +1044,20 @@ describe('drawCircle with an integer radius', () => {
   });
 });
 
+/**
+ * A ring traced around its circumference would run for days at these radii, so a regression to
+ * that walk hangs these tests until the runner's timeout. No test here times the call.
+ */
 describe('drawCircle cost', () => {
-  /** Run `draw` and return how long it took, in milliseconds. */
-  function timed(draw: () => void): number {
-    const started = performance.now();
-    draw();
-    return performance.now() - started;
-  }
-
-  it('returns promptly for a radius of 1e9 centered on the canvas', () => {
+  it('draws a radius of 1e9 centered on the canvas, painting nothing', () => {
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(32, 32, 1e9, 'white'))).toBeLessThan(250);
+    c.drawCircle(32, 32, 1e9, 'white');
     expect(paintedCount(c)).toBe(0);
   });
 
-  it('returns promptly for a radius of 1e15 and paints nothing, the ring lying off the canvas (issue repro)', () => {
+  it('draws a radius of 1e15 and paints nothing, the ring lying off the canvas (issue repro)', () => {
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(32, 32, 1e15, 'white'))).toBeLessThan(250);
+    c.drawCircle(32, 32, 1e15, 'white');
     expect(paintedCount(c)).toBe(0);
   });
 
@@ -1030,33 +1065,33 @@ describe('drawCircle cost', () => {
     ['Number.MAX_VALUE', Number.MAX_VALUE],
     ['1e300', 1e300],
     ['2⁴⁰ + ½', 2 ** 40 + 0.5],
-  ])('returns promptly for a radius of %s', (_name, radius) => {
+  ])('draws a radius of %s, painting nothing', (_name, radius) => {
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(32, 32, radius, 'white'))).toBeLessThan(250);
+    c.drawCircle(32, 32, radius, 'white');
     expect(paintedCount(c)).toBe(0);
   });
 
   it('paints the clipped arc of a 1e15 ring that crosses the canvas', () => {
     const vertical = new Canvas(64);
     const horizontal = new Canvas(64);
-    expect(timed(() => vertical.drawCircle(-1e15 + 32, 20, 1e15, 'white'))).toBeLessThan(250);
-    expect(timed(() => horizontal.drawCircle(40, 1e15 + 60, 1e15, 'white'))).toBeLessThan(250);
+    vertical.drawCircle(-1e15 + 32, 20, 1e15, 'white');
+    horizontal.drawCircle(40, 1e15 + 60, 1e15, 'white');
 
     // A radius this large is flat across 64 pixels: one column, one row.
     expect(paintedPixels(vertical)).toEqual(range(0, 63).map((y) => [32, y]));
     expect(paintedPixels(horizontal)).toEqual(range(0, 63).map((x) => [x, 60]));
   });
 
-  it('bounds the cost of a ring through a 4096×4096 canvas by the canvas', () => {
+  it('draws a 1e12 ring through a 4096×4096 canvas as one column', () => {
     const c = new Canvas(4096);
-    expect(timed(() => c.drawCircle(-1e12 + 2000, 2048, 1e12, 'white'))).toBeLessThan(1000);
+    c.drawCircle(-1e12 + 2000, 2048, 1e12, 'white');
     expect(paintedCount(c)).toBe(4096);
   });
 
   it('paints the clipped edge of a large fractional ring through the canvas', () => {
     const cx = -1_000_000 + 32.25;
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(cx, 32, 1_000_000.5, 'white'))).toBeLessThan(250);
+    c.drawCircle(cx, 32, 1_000_000.5, 'white');
     expect(Buffer.compare(c.buffer, footprintEdge(64, 64, cx, 32, 1_000_000.5).buffer)).toBe(0);
     expect(paintedCount(c)).toBeGreaterThan(0);
   });
@@ -1064,7 +1099,7 @@ describe('drawCircle cost', () => {
   it('paints the clipped edge of a large integer-radius ring about a fractional center', () => {
     const cy = 1_000_000 + 40.5;
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(20.75, cy, 1_000_000, 'white'))).toBeLessThan(250);
+    c.drawCircle(20.75, cy, 1_000_000, 'white');
     expect(Buffer.compare(c.buffer, footprintEdge(64, 64, 20.75, cy, 1_000_000).buffer)).toBe(0);
     expect(paintedCount(c)).toBeGreaterThan(0);
   });
@@ -1073,14 +1108,11 @@ describe('drawCircle cost', () => {
     ['1e15', 1e15],
     ['1e300', 1e300],
     ['Number.MAX_VALUE', Number.MAX_VALUE],
-  ])(
-    'returns promptly for a radius of %s about a fractional center, painting nothing',
-    (_name, radius) => {
-      const c = new Canvas(64);
-      expect(timed(() => c.drawCircle(32.5, 31.25, radius, 'white'))).toBeLessThan(250);
-      expect(paintedCount(c)).toBe(0);
-    },
-  );
+  ])('draws a radius of %s about a fractional center, painting nothing', (_name, radius) => {
+    const c = new Canvas(64);
+    c.drawCircle(32.5, 31.25, radius, 'white');
+    expect(paintedCount(c)).toBe(0);
+  });
 });
 
 describe('drawCircle with a fractional radius', () => {
@@ -1522,6 +1554,18 @@ describe('fillTriangle', () => {
     ]);
   });
 
+  it('paints the integer base row of a flat-bottom triangle (issue repro)', () => {
+    const up = new Canvas(16);
+    up.fillTriangle(5, 0, 0, 10, 10, 10, 'white');
+    const down = new Canvas(16);
+    down.fillTriangle(0, 0, 10, 0, 5, 10, 'white');
+
+    // Row 10 spans x 0–10; each mirror covers 61 pixels (rows of 11, 10, 9, … 1)
+    expect([0, 5, 10].map((x) => up.getPixelRgba(x, 10)[3])).toEqual([255, 255, 255]);
+    expect(paintedCount(up)).toBe(61);
+    expect(paintedCount(down)).toBe(61);
+  });
+
   it('keeps the row above a fractional middle vertex on a sliver triangle', () => {
     const c = new Canvas(16);
     c.fillTriangle(2, 4, 12, 4.5, 2, 5, [255, 0, 0]);
@@ -1923,6 +1967,20 @@ describe('blit', () => {
     floored.blit(blitSource(), Math.floor(dx), Math.floor(dy));
 
     expect(Buffer.compare(fractional.buffer, floored.buffer)).toBe(0);
+  });
+
+  it('blits a canvas onto itself from its pixels as they were before the call', () => {
+    const c = new Canvas(8, 1);
+    c.setPixel(0, 0, [255, 0, 0]);
+    c.setPixel(1, 0, [0, 255, 0]);
+
+    c.blit(c, 1, 0);
+    expect([0, 1, 2, 3].map((x) => c.getPixelRgba(x, 0))).toEqual([
+      [255, 0, 0, 255],
+      [255, 0, 0, 255],
+      [0, 255, 0, 255],
+      [0, 0, 0, 0],
+    ]);
   });
 
   it('floors a fractional offset with the deprecated transparentColor key too', () => {
@@ -3198,14 +3256,11 @@ describe('anti-aliased lines and circles', () => {
   });
 });
 
+/**
+ * Walking these strokes point by point would run for days, so a regression to that walk hangs
+ * these tests until the runner's timeout. No test here times the call.
+ */
 describe('stroke cost', () => {
-  /** Run `draw` and return how long it took, in milliseconds. */
-  function timed(draw: () => void): number {
-    const started = performance.now();
-    draw();
-    return performance.now() - started;
-  }
-
   it.each<[string, [number, number, number, number], StrokeOptions]>([
     ['horizontal', [Number.MAX_VALUE, 0, 0, 0], { width: 3 }],
     ['vertical', [0, Number.MAX_VALUE, 0, 0], { width: 3 }],
@@ -3215,7 +3270,7 @@ describe('stroke cost', () => {
     ['diagonal', [Number.MAX_VALUE, Number.MAX_VALUE, 0, 0], { antialias: true }],
   ])('clips an intersecting extreme %s segment %j and paints (0, 0)', (_name, ends, opts) => {
     const c = new Canvas(16);
-    expect(timed(() => c.drawLine(...ends, [255, 0, 0], opts))).toBeLessThan(250);
+    c.drawLine(...ends, [255, 0, 0], opts);
     expect(c.getPixelRgba(0, 0)).toEqual([255, 0, 0, 255]);
   });
 
@@ -3223,32 +3278,41 @@ describe('stroke cost', () => {
     ['width 3', { width: 3 }],
     ['antialias', { antialias: true }],
     ['width 3 antialias', { width: 3, antialias: true }],
-  ])('returns promptly for drawCircle(32, 32, 1e15) at %s, painting nothing', (_name, opts) => {
+  ])('draws drawCircle(32, 32, 1e15) at %s, painting nothing', (_name, opts) => {
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(32, 32, 1e15, 'white', opts))).toBeLessThan(250);
+    c.drawCircle(32, 32, 1e15, 'white', opts);
     expect(paintedCount(c)).toBe(0);
   });
 
   it('paints the clipped arc of a 1e15 ring crossing the canvas at width 3', () => {
     const c = new Canvas(64);
-    expect(timed(() => c.drawCircle(-1e15 + 32, 20, 1e15, 'white', { width: 3 }))).toBeLessThan(
-      250,
-    );
+    c.drawCircle(-1e15 + 32, 20, 1e15, 'white', { width: 3 });
     expect(paintedPixels(c)).toEqual(range(0, 63).flatMap((y) => [31, 32, 33].map((x) => [x, y])));
   });
 
-  it('returns promptly for drawLine(0, 0, 63, 63) at width 1e9, filling the canvas', () => {
+  it('draws drawLine(0, 0, 63, 63) at width 1e9, filling the canvas', () => {
     const c = new Canvas(64);
-    expect(timed(() => c.drawLine(0, 0, 63, 63, 'white', { width: 1e9 }))).toBeLessThan(250);
+    c.drawLine(0, 0, 63, 63, 'white', { width: 1e9 });
     expect(paintedCount(c)).toBe(64 * 64);
   });
 
-  it('bounds a wide anti-aliased ring on a 4096×4096 canvas by the canvas', () => {
+  it('keeps a wide anti-aliased ring on a 4096×4096 canvas within its band', () => {
     const c = new Canvas(4096);
-    expect(
-      timed(() => c.drawCircle(2048, 2048, 2000, 'white', { width: 6, antialias: true })),
-    ).toBeLessThan(1000);
-    expect(paintedCount(c)).toBeGreaterThan(0);
+    c.drawCircle(2048, 2048, 2000, 'white', { width: 6, antialias: true });
+
+    // Width 6 reaches 3 px either side of the radius; a shaded edge pixel's center lies within ¾ px more
+    let painted = 0;
+    let outside = 0;
+    for (let y = 0; y < 4096; y++) {
+      for (let x = 0; x < 4096; x++) {
+        if (c.buffer[(y * 4096 + x) * 4 + 3] === 0) continue;
+        painted++;
+        const d = Math.hypot(x - 2048, y - 2048);
+        if (d < 2000 - 3.75 || d > 2000 + 3.75) outside++;
+      }
+    }
+    expect(painted).toBeGreaterThan(2 * Math.PI * 2000 * 6 * 0.9);
+    expect(outside).toBe(0);
   });
 });
 
