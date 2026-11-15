@@ -5,6 +5,7 @@ export * from './core.js';
 export {
   PixooClient,
   type PixooClientOptions,
+  type PixooCallOptions,
   type PixooResult,
   type PixooFailure,
   type PixooErrorKind,

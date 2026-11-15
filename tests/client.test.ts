@@ -1,6 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PixooClient, Channel, unwrap, type PixooResult } from '../src/client.js';
-import { Canvas } from '../src/canvas.js';
+import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from 'vitest';
+import {
+  PixooClient,
+  Channel,
+  unwrap,
+  type PixooClientOptions,
+  type PixooResult,
+} from '../src/client.js';
+import { Canvas, type PixooSize } from '../src/canvas.js';
 
 const TEST_IP = '192.0.2.1';
 
@@ -26,6 +32,42 @@ describe('PixooClient construction', () => {
   it('exposes the IP', () => {
     const client = new PixooClient(TEST_IP);
     expect(client.ip).toBe(TEST_IP);
+  });
+
+  it.each<[string, PixooClientOptions, string]>([
+    ['size 48', { size: 48 as PixooSize }, 'size must be 16, 32, or 64; got 48'],
+    ['size 0', { size: 0 as PixooSize }, 'size must be 16, 32, or 64; got 0'],
+    ['timeout 0', { timeout: 0 }, 'timeout must be a positive number; got 0'],
+    ['timeout NaN', { timeout: Number.NaN }, 'timeout must be a positive number; got NaN'],
+    [
+      'timeout Infinity',
+      { timeout: Number.POSITIVE_INFINITY },
+      'timeout must be a positive number; got Infinity',
+    ],
+    ['retries -1', { retries: -1 }, 'retries must be a non-negative integer; got -1'],
+    ['retries 1.5', { retries: 1.5 }, 'retries must be a non-negative integer; got 1.5'],
+    ['retries NaN', { retries: Number.NaN }, 'retries must be a non-negative integer; got NaN'],
+    ['retryDelay -1', { retryDelay: -1 }, 'retryDelay must be a non-negative number; got -1'],
+    [
+      'minPushInterval NaN',
+      { minPushInterval: Number.NaN },
+      'minPushInterval must be a non-negative number; got NaN',
+    ],
+    [
+      'minPushInterval Infinity',
+      { minPushInterval: Number.POSITIVE_INFINITY },
+      'minPushInterval must be a non-negative number; got Infinity',
+    ],
+  ])('rejects %s, naming the option', (_name, opts, message) => {
+    expect(() => new PixooClient(TEST_IP, opts)).toThrow(new RangeError(`PixooClient ${message}`));
+  });
+
+  it('accepts zero retries, retry delay, and push interval, and every panel size', () => {
+    for (const size of [16, 32, 64] as const) {
+      expect(
+        new PixooClient(TEST_IP, { size, retries: 0, retryDelay: 0, minPushInterval: 0 }).size,
+      ).toBe(size);
+    }
   });
 });
 
@@ -244,6 +286,185 @@ describe('PixooClient.send', () => {
 
     expect(res).toMatchObject({ ok: false, kind: 'timeout' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a response failure for a 200 reply that is not JSON, without retrying (issue repro)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+    });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 0 });
+
+    const res = await client.send('Channel/GetAllConf');
+
+    expect(res).toEqual({
+      ok: false,
+      kind: 'response',
+      message: `Reply to Channel/GetAllConf is not JSON — is ${TEST_IP} a Pixoo?`,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each<[string, unknown]>([
+    ['no error_code', { Brightness: 100 }],
+    ['a string error_code', { error_code: 'Request data illegal json' }],
+    ['a null body', null],
+    ['an array body', [0]],
+  ])('returns a response failure for JSON with %s, without retrying', async (_name, body) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: () => Promise.resolve(body),
+    });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 2, retryDelay: 0 });
+
+    const res = await client.send('Channel/GetAllConf');
+
+    expect(res).toEqual({
+      ok: false,
+      kind: 'response',
+      message: `Reply to Channel/GetAllConf carries no numeric error_code — is ${TEST_IP} a Pixoo?`,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('retries a body that fails to read as a network failure', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: () => Promise.reject(new TypeError('terminated')),
+    });
+    globalThis.fetch = fetchMock;
+    const client = new PixooClient(TEST_IP, { retries: 1, retryDelay: 0 });
+
+    const res = await client.send('Channel/GetAllConf');
+
+    expect(res).toEqual({ ok: false, kind: 'network', message: 'terminated' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the cause of Node's bare 'fetch failed'", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(
+      new TypeError('fetch failed', {
+        cause: new Error(`connect ECONNREFUSED ${TEST_IP}:80`),
+      }),
+    );
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+
+    const res = await client.send('Channel/GetAllConf');
+
+    expect(res).toEqual({
+      ok: false,
+      kind: 'network',
+      message: `fetch failed: connect ECONNREFUSED ${TEST_IP}:80`,
+    });
+  });
+});
+
+describe('PixooClient cancellation', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  /** A fetch that answers `{ error_code: 0 }` and records each command and its signal. */
+  function recordingFetch(onSend?: (command: string, offset: number | undefined) => void) {
+    const sent: Array<{ command: string; offset?: number; signal: AbortSignal }> = [];
+    const fn = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      sent.push({ command: body.Command, offset: body.PicOffset, signal: init.signal! });
+      onSend?.(body.Command, body.PicOffset);
+      return Promise.resolve(mockResponse({ error_code: 0 }));
+    });
+    return { fn, sent };
+  }
+
+  it('rejects with the reason of an already-aborted signal and sends nothing', async () => {
+    const { fn } = recordingFetch();
+    globalThis.fetch = fn;
+    const reason = new Error('scene replaced');
+    const signal = AbortSignal.abort(reason);
+    const client = new PixooClient(TEST_IP);
+
+    await expect(client.send('Channel/GetAllConf', {}, { signal })).rejects.toBe(reason);
+    await expect(client.push(new Canvas(), 100, { signal })).rejects.toBe(reason);
+    await expect(client.pushAnimation([new Canvas()], 100, { signal })).rejects.toBe(reason);
+    await expect(client.playGifUrl('http://192.0.2.10/a.gif', { signal })).rejects.toBe(reason);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('aborts the request on the wire with the caller signal', async () => {
+    const controller = new AbortController();
+    globalThis.fetch = vi.fn().mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal!.addEventListener('abort', () => reject(init.signal!.reason));
+          controller.abort(new Error('stop'));
+        }),
+    );
+    const client = new PixooClient(TEST_IP, { retries: 3, retryDelay: 0 });
+
+    await expect(
+      client.send('Channel/GetAllConf', {}, { signal: controller.signal }),
+    ).rejects.toThrow('stop');
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('sends no retry once the signal aborts after a failed attempt', async () => {
+    const controller = new AbortController();
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      controller.abort(new Error('stop'));
+      return Promise.reject(new Error('ECONNRESET'));
+    });
+    const client = new PixooClient(TEST_IP, { retries: 3, retryDelay: 0 });
+
+    await expect(
+      client.send('Channel/GetAllConf', {}, { signal: controller.signal }),
+    ).rejects.toThrow('stop');
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('sends no frame, and no trailing reset, after the signal aborts mid-animation', async () => {
+    const controller = new AbortController();
+    const { fn, sent } = recordingFetch((command, offset) => {
+      if (command === 'Draw/SendHttpGif' && offset === 1) controller.abort(new Error('stop'));
+    });
+    globalThis.fetch = fn;
+    const client = new PixooClient(TEST_IP);
+    const frames = [new Canvas(), new Canvas(), new Canvas(), new Canvas()];
+
+    await expect(client.pushAnimation(frames, 100, { signal: controller.signal })).rejects.toThrow(
+      'stop',
+    );
+    expect(sent.map((s) => `${s.command}${s.offset === undefined ? '' : `#${s.offset}`}`)).toEqual([
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif#0',
+      'Draw/SendHttpGif#1',
+    ]);
+  });
+
+  it('passes a signal to every request of a push, aborted with the caller', async () => {
+    const controller = new AbortController();
+    const { fn, sent } = recordingFetch();
+    globalThis.fetch = fn;
+    const client = new PixooClient(TEST_IP);
+
+    await client.push(new Canvas(), 100, { signal: controller.signal });
+    controller.abort();
+
+    expect(sent).toHaveLength(2);
+    for (const { signal } of sent) expect(signal.aborted).toBe(true);
   });
 });
 
@@ -609,7 +830,7 @@ describe('PixooClient non-finite arguments', () => {
       () => device.setClock(Number.NaN),
       () => device.playBuzzer(Number.NaN, 500, 1000),
       () => device.sendText({ id: 1, x: Number.NaN, y: 0, text: 'hi' }),
-      () => device.setChannel(Number.NaN),
+      () => device.setChannel(Number.NaN as Channel),
       () => device.clearText(Number.NaN),
       () => device.push(new Canvas(), Number.NaN),
       () => device.pushAnimation([new Canvas(), new Canvas()], Number.POSITIVE_INFINITY),
@@ -1061,7 +1282,7 @@ describe('PixooClient.pushAnimation', () => {
 });
 
 describe('PixooClient frame throttling', () => {
-  const INTERVAL = 40;
+  const INTERVAL = 1000;
   let originalFetch: typeof globalThis.fetch;
   let sends: Array<{ command: string; at: number }>;
 
@@ -1076,7 +1297,17 @@ describe('PixooClient frame throttling', () => {
     return times.slice(1).map((at, i) => at - times[i]!);
   }
 
+  /** Run `work` to completion, firing every timer it sets; resolves to the fake ms it took. */
+  async function elapsedMs(work: () => Promise<unknown>): Promise<number> {
+    const started = Date.now();
+    const done = work();
+    await vi.runAllTimersAsync();
+    await done;
+    return Date.now() - started;
+  }
+
   beforeEach(() => {
+    vi.useFakeTimers();
     originalFetch = globalThis.fetch;
     sends = [];
     globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: { body: string }) => {
@@ -1087,6 +1318,7 @@ describe('PixooClient frame throttling', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.useRealTimers();
   });
 
   /** Timing stays as it was before the option existed unless it is asked for. */
@@ -1096,40 +1328,36 @@ describe('PixooClient frame throttling', () => {
   ])('sends frames back to back when minPushInterval is %s', async (_label, opts) => {
     const client = new PixooClient(TEST_IP, { retries: 0, ...opts });
 
-    const started = Date.now();
-    await client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]);
-    const elapsed = Date.now() - started;
+    const elapsed = await elapsedMs(() =>
+      client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]),
+    );
 
-    expect(frameTimes()).toHaveLength(3);
-    expect(Math.max(...frameGaps())).toBeLessThan(INTERVAL / 2);
-    expect(elapsed).toBeLessThan(INTERVAL / 2);
+    expect(frameGaps()).toEqual([0, 0]);
+    expect(elapsed).toBe(0);
   });
 
   it('spaces animation frames by minPushInterval', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]);
+    await elapsedMs(() => client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]));
 
-    expect(frameTimes()).toHaveLength(3);
-    for (const gap of frameGaps()) expect(gap).toBeGreaterThanOrEqual(INTERVAL - 5);
+    expect(frameGaps()).toEqual([INTERVAL, INTERVAL]);
   });
 
   it('does not delay the first frame behind its own reset', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    const started = Date.now();
-    await client.push(new Canvas());
-    const elapsed = Date.now() - started;
+    const elapsed = await elapsedMs(() => client.push(new Canvas()));
 
     expect(sends.map((s) => s.command)).toEqual(['Draw/ResetHttpGifId', 'Draw/SendHttpGif']);
-    expect(elapsed).toBeLessThan(INTERVAL / 2);
+    expect(elapsed).toBe(0);
   });
 
   it('spaces consecutive pushes without delaying the intervening reset', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.push(new Canvas());
-    await client.push(new Canvas());
+    await elapsedMs(() => client.push(new Canvas()));
+    await elapsedMs(() => client.push(new Canvas()));
 
     expect(sends.map((s) => s.command)).toEqual([
       'Draw/ResetHttpGifId',
@@ -1137,77 +1365,202 @@ describe('PixooClient frame throttling', () => {
       'Draw/ResetHttpGifId',
       'Draw/SendHttpGif',
     ]);
-    expect(sends[2]!.at - sends[1]!.at).toBeLessThan(INTERVAL / 2);
-    expect(frameGaps()[0]).toBeGreaterThanOrEqual(INTERVAL - 5);
+    expect(sends[2]!.at - sends[1]!.at).toBe(0);
+    expect(frameGaps()).toEqual([INTERVAL]);
   });
 
   it('spaces the next animation from the previous frame across the reset', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.pushAnimation([new Canvas(), new Canvas()]);
-    await client.push(new Canvas());
+    await elapsedMs(() => client.pushAnimation([new Canvas(), new Canvas()]));
+    await elapsedMs(() => client.push(new Canvas()));
 
-    expect(frameTimes()).toHaveLength(3);
-    for (const gap of frameGaps()) expect(gap).toBeGreaterThanOrEqual(INTERVAL - 5);
+    expect(frameGaps()).toEqual([INTERVAL, INTERVAL]);
   });
 
   it('does not delay a GIF URL play behind a frame', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.push(new Canvas());
-    const started = Date.now();
-    await client.playGifUrl('http://192.0.2.10/a.gif');
-    const elapsed = Date.now() - started;
+    await elapsedMs(() => client.push(new Canvas()));
+    const elapsed = await elapsedMs(() => client.playGifUrl('http://192.0.2.10/a.gif'));
 
     expect(sends.map((s) => s.command)).toEqual([
       'Draw/ResetHttpGifId',
       'Draw/SendHttpGif',
       'Device/PlayTFGif',
     ]);
-    expect(elapsed).toBeLessThan(INTERVAL / 2);
+    expect(elapsed).toBe(0);
   });
 
   it('does not delay the next frame behind a GIF URL play', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.playGifUrl('http://192.0.2.10/a.gif');
-    const started = Date.now();
-    await client.push(new Canvas());
-    const elapsed = Date.now() - started;
+    await elapsedMs(() => client.playGifUrl('http://192.0.2.10/a.gif'));
+    const elapsed = await elapsedMs(() => client.push(new Canvas()));
 
     expect(sends.map((s) => s.command)).toEqual([
       'Device/PlayTFGif',
       'Draw/ResetHttpGifId',
       'Draw/SendHttpGif',
     ]);
-    expect(elapsed).toBeLessThan(INTERVAL / 2);
+    expect(elapsed).toBe(0);
   });
 
   it('keeps spacing frames from the previous frame across a GIF URL play', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.push(new Canvas());
-    await client.playGifUrl('http://192.0.2.10/a.gif');
-    await client.push(new Canvas());
+    await elapsedMs(() => client.push(new Canvas()));
+    await elapsedMs(() => client.playGifUrl('http://192.0.2.10/a.gif'));
+    await elapsedMs(() => client.push(new Canvas()));
 
-    expect(frameTimes()).toHaveLength(2);
-    expect(frameGaps()[0]).toBeGreaterThanOrEqual(INTERVAL - 5);
+    expect(frameGaps()).toEqual([INTERVAL]);
   });
 
   it('does not delay non-draw commands behind a frame', async () => {
     const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: INTERVAL });
 
-    await client.push(new Canvas());
-    const started = Date.now();
-    await client.getConfig();
-    await client.setBrightness(50);
-    const elapsed = Date.now() - started;
+    await elapsedMs(() => client.push(new Canvas()));
+    const elapsed = await elapsedMs(async () => {
+      await client.getConfig();
+      await client.setBrightness(50);
+    });
 
     expect(sends.map((s) => s.command).slice(2)).toEqual([
       'Channel/GetAllConf',
       'Channel/SetBrightness',
     ]);
-    expect(elapsed).toBeLessThan(INTERVAL / 2);
+    expect(elapsed).toBe(0);
+  });
+});
+
+describe('PixooClient display pushes take turns', () => {
+  let originalFetch: typeof globalThis.fetch;
+  let sent: Array<{ command: string; picId?: number; offset?: number; data?: string; at: number }>;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    sent = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      sent.push({
+        command: body.Command,
+        picId: body.PicID,
+        offset: body.PicOffset,
+        data: body.PicData,
+        at: Date.now(),
+      });
+      return Promise.resolve(mockResponse({ error_code: 0 }));
+    });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.useRealTimers();
+  });
+
+  /** `command` or `command#offset@picId` per request, in send order. */
+  const wire = () =>
+    sent.map((s) => (s.offset === undefined ? s.command : `GIF#${s.offset}@${s.picId}`));
+
+  it('sends overlapping animations one after the other, each under one PicID (issue repro)', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+    const a = client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]);
+    const b = client.pushAnimation([new Canvas(), new Canvas(), new Canvas()]);
+    await Promise.all([a, b]);
+
+    const [idA, idB] = [sent[1]!.picId, sent[5]!.picId];
+    expect(idA).not.toBe(idB);
+    expect(wire()).toEqual([
+      'Draw/ResetHttpGifId',
+      `GIF#0@${idA}`,
+      `GIF#1@${idA}`,
+      `GIF#2@${idA}`,
+      'Draw/ResetHttpGifId',
+      `GIF#0@${idB}`,
+      `GIF#1@${idB}`,
+      `GIF#2@${idB}`,
+    ]);
+  });
+
+  it('holds a push and a GIF URL play behind an animation still sending', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+    const anim = client.pushAnimation([new Canvas(), new Canvas()]);
+    const frame = client.push(new Canvas());
+    const play = client.playGifUrl('http://192.0.2.10/a.gif');
+    await Promise.all([anim, frame, play]);
+
+    expect(sent.map((s) => s.command)).toEqual([
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+      'Draw/SendHttpGif',
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+      'Device/PlayTFGif',
+    ]);
+  });
+
+  it('spaces the frames of overlapping pushes by minPushInterval', async () => {
+    vi.useFakeTimers();
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: 1000 });
+    const pushes = Promise.all([client.push(new Canvas()), client.push(new Canvas())]);
+    await vi.advanceTimersByTimeAsync(1000);
+    await pushes;
+
+    const frames = sent.filter((s) => s.command === 'Draw/SendHttpGif').map((s) => s.at);
+    expect(frames).toHaveLength(2);
+    expect(frames[1]! - frames[0]!).toBe(1000);
+  });
+
+  it('sends what the canvas held when push was called', async () => {
+    const client = new PixooClient(TEST_IP, { retries: 0 });
+    const canvas = new Canvas().clear('blue');
+    const expected = canvas.toBase64();
+    const anim = client.pushAnimation([new Canvas()]);
+    const frame = client.push(canvas);
+    canvas.clear('red');
+    await Promise.all([anim, frame]);
+
+    expect(sent.at(-1)!.data).toBe(expected);
+  });
+
+  it('drops a queued push whose signal aborts before its turn, and keeps the queue moving', async () => {
+    vi.useFakeTimers();
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: 1000 });
+    const controller = new AbortController();
+    const anim = client.pushAnimation([new Canvas(), new Canvas()]);
+    const dropped = client.push(new Canvas(), 100, { signal: controller.signal });
+    const rejected = expect(dropped).rejects.toThrow('superseded');
+    controller.abort(new Error('superseded'));
+    await rejected;
+    const after = client.push(new Canvas());
+    await vi.advanceTimersByTimeAsync(2000);
+    await Promise.all([anim, after]);
+
+    expect(sent.map((s) => s.command)).toEqual([
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+      'Draw/SendHttpGif',
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+    ]);
+  });
+
+  it('rejects a push whose signal aborts during the minPushInterval wait, sending no frame', async () => {
+    vi.useFakeTimers();
+    const client = new PixooClient(TEST_IP, { retries: 0, minPushInterval: 1000 });
+    await client.push(new Canvas());
+    const controller = new AbortController();
+    const second = client.push(new Canvas(), 100, { signal: controller.signal });
+    const rejected = expect(second).rejects.toThrow('stop');
+    await vi.advanceTimersByTimeAsync(500);
+    controller.abort(new Error('stop'));
+    await rejected;
+
+    expect(sent.map((s) => s.command)).toEqual([
+      'Draw/ResetHttpGifId',
+      'Draw/SendHttpGif',
+      'Draw/ResetHttpGifId',
+    ]);
   });
 });
 
@@ -1250,11 +1603,12 @@ describe('PixooClient.discover', () => {
   });
 });
 
-describe('Channel enum', () => {
+describe('Channel', () => {
   it('has correct values', () => {
-    expect(Channel.Faces).toBe(0);
-    expect(Channel.Cloud).toBe(1);
-    expect(Channel.Visualizer).toBe(2);
-    expect(Channel.Custom).toBe(3);
+    expect(Channel).toEqual({ Faces: 0, Cloud: 1, Visualizer: 2, Custom: 3 });
+  });
+
+  it('types a channel as its index', () => {
+    expectTypeOf<Channel>().toEqualTypeOf<0 | 1 | 2 | 3>();
   });
 });

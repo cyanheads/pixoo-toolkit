@@ -5,9 +5,11 @@ import { assertAnimationFrameDimensions } from './animation.js';
 /**
  * Why a client call failed. Network failures and timeouts are retryable;
  * HTTP retryability depends on the status. 'device' means the Pixoo received
- * the command and rejected it.
+ * the command and rejected it. 'response' means a reply arrived but is not the
+ * API's JSON envelope with a numeric `error_code` — usually another HTTP
+ * server answering at that address.
  */
-export type PixooErrorKind = 'network' | 'timeout' | 'http' | 'device';
+export type PixooErrorKind = 'network' | 'timeout' | 'http' | 'device' | 'response';
 
 /** A failed client call. */
 export interface PixooFailure {
@@ -69,17 +71,21 @@ export interface DiscoveredDevice {
   ip: string;
 }
 
-export enum Channel {
-  Faces = 0,
-  Cloud = 1,
-  Visualizer = 2,
-  Custom = 3,
-}
+/** The device channels — `setChannel()` takes one, `getChannel()` reports one as `SelectIndex`. */
+export const Channel = {
+  Faces: 0,
+  Cloud: 1,
+  Visualizer: 2,
+  Custom: 3,
+} as const;
+
+/** A device channel index, 0–3. */
+export type Channel = (typeof Channel)[keyof typeof Channel];
 
 export interface PixooClientOptions {
   /** Size in pixels of the display this client talks to (default: 64). Pushed canvases must match it; also the default text width. */
   size?: PixooSize;
-  /** Request timeout in ms (default: 5000). */
+  /** Request timeout in ms, per attempt (default: 5000). */
   timeout?: number;
   /** Number of retry attempts on transient failures (default: 1). */
   retries?: number;
@@ -96,6 +102,19 @@ export interface PixooClientOptions {
    */
   minPushInterval?: number;
 }
+
+/** Per-call options for `send()` and the display pushes. */
+export interface PixooCallOptions {
+  /**
+   * Cancels the call. Once it aborts, the call sends nothing further — no
+   * retry, no next frame, no queued push — and rejects with the signal's
+   * reason instead of returning a `PixooResult`. A request already on the
+   * wire is aborted with it.
+   */
+  signal?: AbortSignal;
+}
+
+const PIXOO_SIZES: ReadonlySet<number> = new Set([16, 32, 64]);
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
@@ -118,13 +137,73 @@ function assertFiniteArgs(
   }
 }
 
+/** Throw RangeError naming a `PixooClient` option that breaks its rule. */
+function assertOption(name: string, value: number, valid: boolean, rule: string): void {
+  if (!valid) throw new RangeError(`PixooClient ${name} must be ${rule}; got ${value}`);
+}
+
+/** Wait `ms`, or reject with the signal's reason as soon as it aborts. */
+function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Wait for `turn` to settle, or reject with the signal's reason as soon as it
+ * aborts. `turn` never rejects.
+ */
+async function awaitTurn(turn: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return turn;
+  signal.throwIfAborted();
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+  });
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    await Promise.race([turn, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+/**
+ * A fetch failure's message, with its cause — Node reports every connection
+ * failure as `fetch failed` and keeps the reason (`ECONNREFUSED`, a DNS miss)
+ * on `cause`.
+ */
+function networkMessage(err: unknown): string {
+  if (!(err instanceof Error)) return 'Unknown error';
+  const cause = err.cause instanceof Error ? err.cause.message : undefined;
+  return cause && !err.message.includes(cause) ? `${err.message}: ${cause}` : err.message;
+}
+
+/** Whether a fetch rejection is an abort — the per-attempt timeout, when the caller's signal is clear. */
+function isAbort(err: unknown): boolean {
+  return err instanceof DOMException && (err.name === 'AbortError' || err.name === 'TimeoutError');
+}
+
 /**
  * HTTP client for a Divoom Pixoo device.
  *
  * All commands go through `POST http://<ip>/post` with JSON bodies and
- * return a `PixooResult` — errors are values, never thrown.
+ * return a `PixooResult` — errors are values, never thrown. The display
+ * pushes (`push()`, `pushAnimation()`, `playGifUrl()`) take turns: a push
+ * made while another is still sending waits for it, so frames of two pushes
+ * never interleave and `minPushInterval` spaces every frame.
  */
 export class PixooClient {
+  readonly ip: string;
   readonly url: string;
   readonly size: PixooSize;
   private readonly timeout: number;
@@ -133,17 +212,49 @@ export class PixooClient {
   private readonly minPushInterval: number;
   private lastFrameSentAt = 0;
   private picId = Date.now() % 10000;
+  /** Settles when every display push queued so far has finished. Never rejects. */
+  private displayQueue: Promise<void> = Promise.resolve();
 
-  constructor(
-    readonly ip: string,
-    opts: PixooClientOptions = {},
-  ) {
+  /**
+   * @throws RangeError when `size` is not 16, 32, or 64, `timeout` is not a
+   *   positive finite number, `retries` is not a non-negative integer, or
+   *   `retryDelay` or `minPushInterval` is not a non-negative finite number.
+   */
+  constructor(ip: string, opts: PixooClientOptions = {}) {
+    const {
+      size = DEFAULT_SIZE,
+      timeout = 5000,
+      retries = 1,
+      retryDelay = 250,
+      minPushInterval = 0,
+    } = opts;
+    assertOption('size', size, PIXOO_SIZES.has(size), '16, 32, or 64');
+    assertOption('timeout', timeout, Number.isFinite(timeout) && timeout > 0, 'a positive number');
+    assertOption(
+      'retries',
+      retries,
+      Number.isInteger(retries) && retries >= 0,
+      'a non-negative integer',
+    );
+    assertOption(
+      'retryDelay',
+      retryDelay,
+      Number.isFinite(retryDelay) && retryDelay >= 0,
+      'a non-negative number',
+    );
+    assertOption(
+      'minPushInterval',
+      minPushInterval,
+      Number.isFinite(minPushInterval) && minPushInterval >= 0,
+      'a non-negative number',
+    );
+    this.ip = ip;
     this.url = `http://${ip}/post`;
-    this.size = opts.size ?? DEFAULT_SIZE;
-    this.timeout = opts.timeout ?? 5000;
-    this.retries = opts.retries ?? 1;
-    this.retryDelay = opts.retryDelay ?? 250;
-    this.minPushInterval = opts.minPushInterval ?? 0;
+    this.size = size;
+    this.timeout = timeout;
+    this.retries = retries;
+    this.retryDelay = retryDelay;
+    this.minPushInterval = minPushInterval;
   }
 
   /**
@@ -181,20 +292,24 @@ export class PixooClient {
    * `params.Command`; all other parameters are sent unchanged.
    *
    * Retries network failures, timeouts, and HTTP 408, 429, 500, 502, 503,
-   * and 504 with exponential backoff. Other HTTP failures and device
-   * rejections (non-zero error_code) are returned immediately.
+   * and 504 with exponential backoff. Other HTTP failures, replies that are
+   * not the API's JSON envelope, and device rejections (non-zero error_code)
+   * are returned immediately.
+   *
+   * @throws The signal's reason once `opts.signal` aborts.
    */
   async send<T = Record<string, unknown>>(
     command: string,
     params: Record<string, unknown> = {},
+    opts: PixooCallOptions = {},
   ): Promise<PixooResult<T>> {
+    const { signal } = opts;
+    signal?.throwIfAborted();
     const body = JSON.stringify({ ...params, Command: command });
     let lastFailure: PixooFailure = { ok: false, kind: 'network', message: 'No attempts made' };
 
     for (let attempt = 0; attempt <= this.retries; attempt++) {
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.retryDelay * (1 << (attempt - 1))));
-      }
+      if (attempt > 0) await delay(this.retryDelay * (1 << (attempt - 1)), signal);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeout);
       try {
@@ -202,7 +317,7 @@ export class PixooClient {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body,
-          signal: controller.signal,
+          signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
         });
         if (!res.ok) {
           lastFailure = {
@@ -214,25 +329,40 @@ export class PixooClient {
           if (!RETRYABLE_HTTP_STATUSES.has(res.status)) return lastFailure;
           continue;
         }
-        const json = (await res.json()) as { error_code: number } & Record<string, unknown>;
-        if (json.error_code !== 0) {
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch (err) {
+          // A body read in full that does not parse; a failed read rethrows as a network error
+          if (!(err instanceof SyntaxError)) throw err;
+          return {
+            ok: false,
+            kind: 'response',
+            message: `Reply to ${command} is not JSON — is ${this.ip} a Pixoo?`,
+          };
+        }
+        const errorCode = (json as { error_code?: unknown } | null)?.error_code;
+        if (typeof errorCode !== 'number') {
+          return {
+            ok: false,
+            kind: 'response',
+            message: `Reply to ${command} carries no numeric error_code — is ${this.ip} a Pixoo?`,
+          };
+        }
+        if (errorCode !== 0) {
           return {
             ok: false,
             kind: 'device',
-            deviceCode: json.error_code,
-            message: `Device rejected ${command} (error_code ${json.error_code})`,
+            deviceCode: errorCode,
+            message: `Device rejected ${command} (error_code ${errorCode})`,
           };
         }
         return { ok: true, data: json as T & { error_code: 0 } };
       } catch (err) {
-        const isTimeout = err instanceof DOMException && err.name === 'AbortError';
-        lastFailure = isTimeout
+        if (signal?.aborted) throw signal.reason;
+        lastFailure = isAbort(err)
           ? { ok: false, kind: 'timeout', message: 'Request timed out' }
-          : {
-              ok: false,
-              kind: 'network',
-              message: err instanceof Error ? err.message : 'Unknown error',
-            };
+          : { ok: false, kind: 'network', message: networkMessage(err) };
       } finally {
         clearTimeout(timer);
       }
@@ -257,84 +387,135 @@ export class PixooClient {
   }
 
   /**
+   * Run a display push once every push queued before it has finished. A
+   * signal that aborts while the push waits its turn rejects it unsent.
+   */
+  private async takeTurn<T>(signal: AbortSignal | undefined, push: () => Promise<T>): Promise<T> {
+    const previous = this.displayQueue;
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    this.displayQueue = previous.then(() => finished);
+    try {
+      await awaitTurn(previous, signal);
+      return await push();
+    } finally {
+      finish();
+    }
+  }
+
+  /** The PicID for the next animation: the device groups frames by it. */
+  private nextPicId(): number {
+    this.picId = (this.picId + 1) % 10000;
+    return this.picId;
+  }
+
+  /**
    * Send one frame, held back until `minPushInterval` has passed since the
    * previous frame send started. The timestamp is taken at the start of the
    * send, so request latency counts toward the interval rather than adding
    * to it.
    */
-  private async sendFrame(params: Record<string, unknown>): Promise<PixooResult> {
+  private async sendFrame(
+    params: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+  ): Promise<PixooResult> {
     if (this.minPushInterval > 0) {
       const wait = this.lastFrameSentAt + this.minPushInterval - Date.now();
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (wait > 0) await delay(wait, signal);
       this.lastFrameSentAt = Date.now();
     }
-    return this.send('Draw/SendHttpGif', params);
-  }
-
-  /** Reset the device's internal GIF ID counter. Call before pushing if stale. */
-  async resetGifId(): Promise<PixooResult> {
-    return this.send('Draw/ResetHttpGifId');
+    return this.send('Draw/SendHttpGif', params, { signal });
   }
 
   /**
-   * Push a single canvas frame to the display.
+   * Reset the device's internal GIF ID counter. `push()` and
+   * `pushAnimation()` send it before their frames.
+   * @throws The signal's reason once `opts.signal` aborts.
+   */
+  async resetGifId(opts: PixooCallOptions = {}): Promise<PixooResult> {
+    return this.send('Draw/ResetHttpGifId', {}, opts);
+  }
+
+  /**
+   * Push a single canvas frame to the display. The frame is read when the
+   * call is made, so the canvas can be redrawn while the push waits its turn.
    * @param canvas - Canvas matching the client's configured size.
    * @param speed - Milliseconds per frame.
    * @throws RangeError if `speed` is not finite or the canvas does not match
    *   the client's configured size, before any request.
+   * @throws The signal's reason once `opts.signal` aborts.
    */
-  async push(canvas: Canvas, speed = 100): Promise<PixooResult> {
+  async push(canvas: Canvas, speed = 100, opts: PixooCallOptions = {}): Promise<PixooResult> {
     assertFiniteArgs('push', { speed });
     this.assertMatchesDisplay(canvas, 'Canvas');
-    // A failed reset means the device will silently ignore the frame — surface it
-    const reset = await this.resetGifId();
-    if (!reset.ok) return reset;
-    this.picId = (this.picId + 1) % 10000;
-    return this.sendFrame({
-      PicNum: 1,
-      PicWidth: canvas.width,
-      PicOffset: 0,
-      PicID: this.picId,
-      PicSpeed: speed,
-      PicData: canvas.toBase64(),
+    const picData = canvas.toBase64();
+    return this.takeTurn(opts.signal, async () => {
+      // A failed reset means the device will silently ignore the frame — surface it
+      const reset = await this.resetGifId(opts);
+      if (!reset.ok) return reset;
+      return this.sendFrame(
+        {
+          PicNum: 1,
+          PicWidth: this.size,
+          PicOffset: 0,
+          PicID: this.nextPicId(),
+          PicSpeed: speed,
+          PicData: picData,
+        },
+        opts.signal,
+      );
     });
   }
 
   /**
-   * Push a multi-frame animation to the display.
+   * Push a multi-frame animation to the display. The frames are read when the
+   * call is made, so they can be redrawn while the push waits its turn.
    * @param frames - Non-empty array of equal-size Canvas instances (one per frame),
    *   each matching the client's configured size.
    * @param speed - Milliseconds per frame.
    * @throws RangeError if `speed` is not finite, the array is empty, the
    *   frames disagree with each other, or they do not match the client's
    *   configured size, before any request.
+   * @throws The signal's reason once `opts.signal` aborts — no frame after it is sent.
    */
-  async pushAnimation(frames: Canvas[], speed = 100): Promise<PixooResult> {
+  async pushAnimation(
+    frames: Canvas[],
+    speed = 100,
+    opts: PixooCallOptions = {},
+  ): Promise<PixooResult> {
     assertFiniteArgs('pushAnimation', { speed });
     if (frames.length === 0) {
       throw new RangeError('pushAnimation requires at least one frame');
     }
     assertAnimationFrameDimensions(frames);
     this.assertMatchesDisplay(frames[0]!, 'Animation frame 0');
-    const reset = await this.resetGifId();
-    if (!reset.ok) return reset;
-    this.picId = (this.picId + 1) % 10000;
-    let last: PixooResult = reset; // overwritten on the first iteration — frames is non-empty
-    for (let i = 0; i < frames.length; i++) {
-      last = await this.sendFrame({
-        PicNum: frames.length,
-        PicWidth: frames[0]!.width,
-        PicOffset: i,
-        PicID: this.picId,
-        PicSpeed: speed,
-        PicData: frames[i]!.toBase64(),
-      });
-      if (!last.ok) {
-        await this.resetGifId();
-        return last;
+    const picData = frames.map((frame) => frame.toBase64());
+    return this.takeTurn(opts.signal, async () => {
+      const reset = await this.resetGifId(opts);
+      if (!reset.ok) return reset;
+      const picId = this.nextPicId();
+      let last: PixooResult = reset; // overwritten on the first iteration — frames is non-empty
+      for (let i = 0; i < picData.length; i++) {
+        last = await this.sendFrame(
+          {
+            PicNum: picData.length,
+            PicWidth: this.size,
+            PicOffset: i,
+            PicID: picId,
+            PicSpeed: speed,
+            PicData: picData[i]!,
+          },
+          opts.signal,
+        );
+        if (!last.ok) {
+          await this.resetGifId(opts);
+          return last;
+        }
       }
-    }
-    return last;
+      return last;
+    });
   }
 
   // --- Channel / display control ---
@@ -472,22 +653,27 @@ export class PixooClient {
    * before it downloads, and still reports success for a 404, an unreachable
    * host, or a file that is not a GIF — never that the GIF downloaded or played.
    * A GIF that is not 16×16, 32×32, or 64×64 reboots the device once it has
-   * downloaded.
+   * downloaded; `encodeAnimationGif(frames, speed, 1)` writes one at the
+   * panel's own size.
    *
-   * Not held back by `minPushInterval`, and does not delay the next frame send.
+   * It waits its turn behind a push still sending, but is not held back by
+   * `minPushInterval`, and does not delay the next frame send.
    *
    * @param url - URL of the GIF, at most 255 bytes as UTF-8.
    * @throws RangeError if `url` is over 255 bytes as UTF-8, before any request —
    *   the device gives no reply to a longer FileName and reboots.
+   * @throws The signal's reason once `opts.signal` aborts.
    */
-  async playGifUrl(url: string): Promise<PixooResult> {
+  async playGifUrl(url: string, opts: PixooCallOptions = {}): Promise<PixooResult> {
     const bytes = new TextEncoder().encode(url).length;
     if (bytes > MAX_GIF_URL_BYTES) {
       throw new RangeError(
         `GIF URL is ${bytes} bytes as UTF-8; Device/PlayTFGif accepts at most ${MAX_GIF_URL_BYTES}, and a longer FileName reboots the device`,
       );
     }
-    return this.send('Device/PlayTFGif', { FileType: 2, FileName: url });
+    return this.takeTurn(opts.signal, () =>
+      this.send('Device/PlayTFGif', { FileType: 2, FileName: url }, opts),
+    );
   }
 
   /**
