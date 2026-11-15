@@ -6,9 +6,13 @@ These encode the procedures this repo actually runs — its gates, its version s
 
 | Skill | Use when |
 |:---|:---|
-| [`git-wrapup`](git-wrapup/SKILL.md) | Working-tree changes are verified and ready to become a version. Ends at a local commit stack + annotated tag. |
-| [`release-and-publish`](release-and-publish/SKILL.md) | A tag exists locally and the release goes public: push, npm publish, GitHub Release. |
+| [`code-simplifier`](code-simplifier/SKILL.md) | A working session left changes in the tree, or a module needs a cleanup pass. Edits the tree; never commits. |
+| [`git-wrapup`](git-wrapup/SKILL.md) | Working-tree changes are verified and ready to become a version. Ends at a commit stack on `release/<version>` with its PR open (release PR mode) or on `main`. |
+| [`release-pr-review`](release-pr-review/SKILL.md) | A release PR is open and gated mode calls for a review before it ships. Lands fixes as commits on the release branch. |
+| [`release-and-publish`](release-and-publish/SKILL.md) | The release is committed (and, in gated mode, reviewed): fast-forward `main`, tag, push, npm publish, GitHub Release. |
 | [`report-issue-local`](report-issue-local/SKILL.md) | Filing a bug or feature request against this repo. |
+
+A release runs `code-simplifier` → `git-wrapup` → `release-pr-review` → `release-and-publish`. The release PR mode — gated or straight-through — is declared in `CLAUDE.md` under `## Publishing`.
 
 ## Conventions
 
