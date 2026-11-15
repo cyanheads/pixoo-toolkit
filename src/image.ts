@@ -38,8 +38,10 @@ interface DecodedImage {
  * sharp's shrink-on-load (libwebp's scaled decode, JPEG DCT scaling), and every
  * format resizes from the same kind of source. The pages decode in one pass:
  * libvips composites a GIF or WebP page from the pages before it, so decoding
- * them one at a time costs O(k) for page k. A vector image has no pixel grid,
- * so sharp renders each page at the resolution its placement asks for.
+ * them one at a time costs O(k) for page k. A raster image is turned upright
+ * by its EXIF orientation, as a photo viewer shows it. A vector image has no
+ * pixel grid, so sharp renders each page at the resolution its placement asks
+ * for.
  */
 async function decodeImage(input: string | Uint8Array, animated: boolean): Promise<DecodedImage> {
   const { format, pages = 1, delay } = await sharp(input).metadata();
@@ -48,7 +50,7 @@ async function decodeImage(input: string | Uint8Array, animated: boolean): Promi
     return { pages: pageCount, delay, page: (k) => sharp(input, { page: k }) };
   }
 
-  const { data, info } = await sharp(input, { animated })
+  const { data, info } = await sharp(input, { animated, autoOrient: true })
     .raw()
     .toBuffer({ resolveWithObject: true });
   const { width, channels } = info;
@@ -99,11 +101,12 @@ async function drawImage(image: Sharp, canvas: Canvas, opts: ImagePlacement): Pr
 /**
  * Load an image and render it onto a Canvas.
  *
- * Decodes at full resolution, then resizes with `kernel` — nearest-neighbor by
- * default, so every placed pixel is a source pixel and pixel art stays crisp in
- * any raster format. A vector source (SVG) renders at the placement's
- * resolution instead. Source alpha is preserved: pixels composite source-over
- * onto the canvas, so semi-transparent edges blend instead of hard-thresholding.
+ * Decodes at full resolution, upright by its EXIF orientation, then resizes
+ * with `kernel` — nearest-neighbor by default, so every placed pixel is a
+ * source pixel and pixel art stays crisp in any raster format. A vector source
+ * (SVG) renders at the placement's resolution instead. Source alpha is
+ * preserved: pixels composite source-over onto the canvas, so semi-transparent
+ * edges blend instead of hard-thresholding.
  * An animated source contributes its first frame — `loadAnimation` decodes them all.
  *
  * @param input - A file path, or encoded image bytes (a `Buffer` or any
@@ -204,9 +207,9 @@ export interface SpriteCell {
 /**
  * Downsample an image into a grid of sprite cells.
  *
- * Decodes the image, finds the bounding box of non-transparent content,
- * divides it into a grid of `cols × rows`, and samples the center of
- * each cell to determine its color.
+ * Decodes the image upright by its EXIF orientation, finds the bounding box
+ * of non-transparent content, divides it into a grid of `cols × rows`, and
+ * samples the center of each cell to determine its color.
  *
  * Returns the grid plus metadata for rendering.
  *
@@ -237,7 +240,7 @@ export async function downsampleSprite(
   const whiteThresh = opts.whiteThreshold ?? 220;
   const darkThresh = opts.darkThreshold ?? 50;
 
-  const { data, info } = await sharp(input)
+  const { data, info } = await sharp(input, { autoOrient: true })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });

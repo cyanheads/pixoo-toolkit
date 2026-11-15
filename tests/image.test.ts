@@ -421,6 +421,49 @@ describe('downsampleSprite from bytes', () => {
   });
 });
 
+describe('EXIF orientation', () => {
+  /**
+   * A 32×16 red JPEG with a dark 8×8 block in its top-left corner, tagged orientation 6 (rotate
+   * 90° clockwise to view) — upright it is 16×32 with the block in the top-right corner.
+   */
+  async function rotatedJpeg(): Promise<Uint8Array> {
+    const rgba = new Uint8Array(32 * 16 * 4);
+    for (let i = 0; i < 32 * 16; i++) {
+      const dark = i % 32 < 8 && Math.floor(i / 32) < 8;
+      rgba.set(dark ? [10, 10, 10, 255] : [220, 20, 20, 255], i * 4);
+    }
+    const jpeg = await sharp(Buffer.from(rgba), { raw: { width: 32, height: 16, channels: 4 } })
+      .flatten()
+      .jpeg({ quality: 100, chromaSubsampling: '4:4:4' })
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    return new Uint8Array(jpeg);
+  }
+
+  const shade = (rgb: readonly number[] | null | undefined) =>
+    rgb ? (rgb[0]! < 60 ? 'dark' : 'red') : 'none';
+
+  it('loadImage places a rotated photo upright (issue repro)', async () => {
+    const canvas = await loadImage(await rotatedJpeg(), { size: 16 });
+
+    // Contained as 8×16 at x 4–11, the dark block at x 8–11, y 0–3
+    expect(shade(canvas.getPixel(10, 1))).toBe('dark');
+    expect(shade(canvas.getPixel(5, 1))).toBe('red');
+    expect(shade(canvas.getPixel(8, 12))).toBe('red');
+    expect(canvas.getPixelRgba(1, 8)[3]).toBe(0);
+  });
+
+  it('downsampleSprite samples a rotated photo upright', async () => {
+    const { grid } = await downsampleSprite(await rotatedJpeg(), 2, 4);
+    expect(grid.map((row) => row.map((cell) => shade(cell.color)))).toEqual([
+      ['red', 'dark'],
+      ['red', 'red'],
+      ['red', 'red'],
+      ['red', 'red'],
+    ]);
+  });
+});
+
 /**
  * 12×10 sprite: transparent margin, a 6×6 body block at (3,2) in [200, 120, 90] with dark eye
  * pixels at (4,3) and (7,3).
