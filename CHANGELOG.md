@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-11-15
+
+### Added
+
+- **client:** `send()`, `resetGifId()`, `push()`, `pushAnimation()`, and `playGifUrl()` take `{ signal }` (the new `PixooCallOptions` type); once it aborts the call sends nothing further and rejects with the signal's reason instead of returning a `PixooResult`.
+- **client:** `PixooErrorKind` gains `'response'` for a reply that is not the API's JSON envelope with a numeric `error_code`, which is returned without a retry.
+
+### Changed
+
+- **client:** `push()`, `pushAnimation()`, and `playGifUrl()` take turns, so a push made while another is sending waits for it and no two pushes interleave frames; each reads its canvases when called.
+- **client:** `Channel` is a const object with a `0 | 1 | 2 | 3` union type of the same name where it was an enum, and `tsconfig.json` sets `erasableSyntaxOnly`.
+- **client:** the constructor throws `RangeError` for a `size` other than 16, 32, or 64, a `timeout` that is not a positive number, `retries` that is not a non-negative integer, or a `retryDelay` or `minPushInterval` that is negative or not finite.
+- **client:** a `'network'` failure message carries the underlying cause, such as `ECONNREFUSED`, after `fetch failed`.
+- **canvas:** `fillCircle()` about an integer center fills the midpoint disc of the radius's ceiling clipped to the `dx² + dy² ≤ r² + r` footprint, so the pixels of some circles change, and the 1px `drawCircle()` ring is its edge for every integer center (#66).
+- **svg-path:** `fillSubpaths()`, `fillPolygon()`, and `renderSvgPath()` fill the pixels whose centers lie inside the path on half-open spans, shifting fills by up to a pixel so that `M0 0H4V4H0Z` matches `fillRect(0, 0, 4, 4)`.
+- **preview:** `encodeAnimationGif()` and `saveAnimationGif()` throw `RangeError` for a `speed` outside 0 to 655350 ms or a `maxColors` that is not an integer from 1 to 256.
+- **animation:** `new Animation()` throws `RangeError` unless `frameCount` is a positive integer.
+- **image:** `loadImage()`, `loadAnimation()`, and `downsampleSprite()` apply the EXIF orientation of a raster image.
+- **deps:** `sharp` ^0.35.4 → ^0.35.5, `vitest` ^5.0.2 → ^5.1.0, `eslint` ^10.11.0 → ^10.15.0, `typescript-eslint` ^8.70.1 → ^8.72.2, `prettier` ^3.9.9 → ^3.10.1, `@types/bun` ^1.4.2 → ^1.4.4, and the lockfile's `brace-expansion` 5.0.9 → 5.0.13.
+
+### Fixed
+
+- **canvas:** `fillCircle()` at an integer radius about an integer center no longer leaves a fill pixel outside the `drawCircle()` ring of the same center and radius (#66).
+- **canvas:** `fillTriangle()` with a flat bottom edge now draws its bottom row.
+- **canvas:** `blit()` of a canvas onto itself reads the pixels as they were before the call.
+- **preview:** `encodeAnimationGif()` quantizes each frame at source resolution before upscaling, so the palette is no longer built from the enlarged copy.
+- **client:** a reply that is not JSON, or has no numeric `error_code`, returns a `'response'` failure where it came back as a `'network'` or `'device'` failure.
+
 ## [0.10.0] — 2026-09-26
 
 ### Added
