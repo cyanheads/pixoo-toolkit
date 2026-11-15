@@ -458,6 +458,11 @@ function assertFinitePoints(
  * so unclosed paths fill like their Z-terminated equivalents. Overlapping
  * rings produce holes, per SVG even-odd fill semantics.
  *
+ * A pixel is filled when its center lies inside, on half-open spans along
+ * both axes — a crossing at the center's own coordinate counts on the top and
+ * left edges only — so `M0 0H4V4H0Z` fills the 4×4 pixels `fillRect(0, 0,
+ * 4, 4)` does, and two paths sharing an edge never both paint a pixel on it.
+ *
  * @throws {RangeError} When a coordinate of any point in any ring is not
  *   finite — before the color resolves.
  */
@@ -498,11 +503,11 @@ export function fillSubpaths(canvas: Canvas, subpaths: readonly Point[][], color
 
     intersections.sort((m, n) => m - n);
 
-    // Fill between pairs
+    // Fill the pixels whose centers x + ½ fall in [left, right) of each pair
     for (let i = 0; i + 1 < intersections.length; i += 2) {
-      const xStart = Math.max(0, Math.ceil(intersections[i]!));
-      const xEnd = Math.min(canvas.width - 1, Math.floor(intersections[i + 1]!));
-      canvas.drawLineH(xStart, y, xEnd - xStart + 1, rgb);
+      const xStart = Math.max(0, Math.ceil(intersections[i]! - 0.5));
+      const xEnd = Math.min(canvas.width, Math.ceil(intersections[i + 1]! - 0.5));
+      if (xEnd > xStart) canvas.drawLineH(xStart, y, xEnd - xStart, rgb);
     }
   }
 }

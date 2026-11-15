@@ -387,7 +387,9 @@ describe('renderSvgPath', () => {
   it('fills every pixel of a right triangle and no others', () => {
     const c = new Canvas(16);
     renderSvgPath(c, 'M2 2 L10 2 L10 10 Z', [255, 0, 0], [16, 16], [0, 0, 16, 16]);
+    // Pixel centers inside: the hypotenuse counts as a left edge, x = 10 as a right one
     expect(litPixels(c)).toEqual([
+      '2,2',
       '3,2',
       '4,2',
       '5,2',
@@ -395,36 +397,56 @@ describe('renderSvgPath', () => {
       '7,2',
       '8,2',
       '9,2',
-      '10,2',
+      '3,3',
       '4,3',
       '5,3',
       '6,3',
       '7,3',
       '8,3',
       '9,3',
-      '10,3',
+      '4,4',
       '5,4',
       '6,4',
       '7,4',
       '8,4',
       '9,4',
-      '10,4',
+      '5,5',
       '6,5',
       '7,5',
       '8,5',
       '9,5',
-      '10,5',
+      '6,6',
       '7,6',
       '8,6',
       '9,6',
-      '10,6',
+      '7,7',
       '8,7',
       '9,7',
-      '10,7',
+      '8,8',
       '9,8',
-      '10,8',
-      '10,9',
+      '9,9',
     ]);
+  });
+
+  it('fills an axis-aligned square path exactly as fillRect does (issue repro)', () => {
+    const path = new Canvas(16);
+    renderSvgPath(path, 'M2 3 H6 V7 H2 Z', [255, 0, 0], [16, 16], [0, 0, 16, 16]);
+    expect(Buffer.compare(path.buffer, new Canvas(16).fillRect(2, 3, 4, 4, 'red').buffer)).toBe(0);
+  });
+
+  it('stays inside its target rect when the path fills the whole viewBox', () => {
+    const c = new Canvas();
+    renderSvgPath(c, 'M0 0 H24 V24 H0 Z', [255, 0, 0], [24, 24], [8, 8, 24, 24]);
+    expect(Buffer.compare(c.buffer, new Canvas().fillRect(8, 8, 24, 24, 'red').buffer)).toBe(0);
+  });
+
+  it('gives a pixel on an edge two abutting paths share to one of them', () => {
+    const c = new Canvas(16);
+    renderSvgPath(c, 'M0 0 H4 V4 H0 Z', [255, 0, 0], [16, 16], [0, 0, 16, 16]);
+    renderSvgPath(c, 'M4 0 H8 V4 H4 Z', [0, 0, 255], [16, 16], [0, 0, 16, 16]);
+    expect(c.getPixel(3, 1)).toEqual([255, 0, 0]);
+    expect(c.getPixel(4, 1)).toEqual([0, 0, 255]);
+    expect(litPixels(c)).toHaveLength(16);
   });
 
   it('renders a simple triangle path', () => {
@@ -903,7 +925,7 @@ describe('renderSvgPath stroke mode', () => {
 
     const filled = new Canvas(32);
     renderSvgPath(filled, CHEVRON, [255, 0, 0], [24, 24], [0, 0, 24, 24]);
-    expect(litPixels(filled)).toHaveLength(42);
+    expect(litPixels(filled)).toHaveLength(30);
     // The wedge interior is fill-only — it is not part of the outline
     expect(filled.getPixel(8, 10)).toEqual([255, 0, 0]);
     expect(stroked.getPixel(8, 10)).toEqual([0, 0, 0]);
